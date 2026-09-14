@@ -1,0 +1,23 @@
+{
+  "name": "discord-mini-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "server",
+    "electron-app"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev --workspace=server",
+    "dev:electron": "npm run dev:electron --workspace=electron-app",
+    "dev": "concurrently -n \"SERVER,ELECTRON\" -c \"blue,magenta\" \"npm run dev:server\" \"npm run dev:electron\"",
+    "build:shared": "npm run build --workspace=shared",
+    "build:server": "npm run build --workspace=server",
+    "build:electron": "npm run build --workspace=electron-app",
+    "build": "npm run build:shared && npm run build:server && npm run build:electron",
+    "package:win": "npm run build:shared && npm run build:server && npm run build && npm run dist:win --workspace=electron-app"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,0 +1,133 @@
+import React from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { Mic, MicOff, Headphones, Monitor, PhoneOff, Radio } from 'lucide-react';
+
+interface VoiceAreaProps {
+  onToggleScreenShare: () => void;
+  onToggleMute: () => void;
+  onToggleDeafen: () => void;
+  onLeaveVoice: () => void;
+}
+
+export const VoiceArea: React.FC<VoiceAreaProps> = ({
+  onToggleScreenShare,
+  onToggleMute,
+  onToggleDeafen,
+  onLeaveVoice
+}) => {
+  const {
+    activeVoiceChannelId,
+    servers,
+    currentServerId,
+    voiceParticipants,
+    isMuted,
+    isDeafened,
+    isScreenSharing
+  } = useAppStore();
+
+  if (!activeVoiceChannelId) return null;
+
+  const currentServer = servers.find((s) => s.id === currentServerId) || servers[0];
+  const channel = currentServer?.channels.find((c) => c.id === activeVoiceChannelId);
+
+  return (
+    <div className="bg-[#1e1f22] border-b border-[#18191c] p-4 flex flex-col gap-4">
+      {/* Voice Channel Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Radio size={18} className="text-[#23a55a] animate-pulse" />
+          <h4 className="font-bold text-white text-sm">
+            {channel?.name || 'Canal de Voz'}
+          </h4>
+          <span className="text-xs text-[#949ba4]">
+            • {voiceParticipants.length} participante{voiceParticipants.length !== 1 ? 's' : ''} conectado{voiceParticipants.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {/* Quick Voice Bar Actions */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onToggleScreenShare}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold shadow transition-all ${
+              isScreenSharing
+                ? 'bg-[#da373c] text-white hover:bg-[#a1282c]'
+                : 'bg-[#5865F2] text-white hover:bg-[#4752c4]'
+            }`}
+          >
+            <Monitor size={14} />
+            {isScreenSharing ? 'Parar Ecrã' : 'Partilhar Ecrã (1080p 60fps)'}
+          </button>
+
+          <button
+            onClick={onToggleMute}
+            className={`p-1.5 rounded-md transition-colors ${
+              isMuted ? 'bg-[#da373c] text-white' : 'bg-[#2b2d31] text-[#dbdee1] hover:bg-[#35373c]'
+            }`}
+            title={isMuted ? 'Desativar Mute' : 'Silenciar'}
+          >
+            {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
+          </button>
+
+          <button
+            onClick={onToggleDeafen}
+            className={`p-1.5 rounded-md transition-colors ${
+              isDeafened ? 'bg-[#da373c] text-white' : 'bg-[#2b2d31] text-[#dbdee1] hover:bg-[#35373c]'
+            }`}
+            title={isDeafened ? 'Desativar Ensurdecer' : 'Ensurdecer'}
+          >
+            <Headphones size={16} />
+          </button>
+
+          <button
+            onClick={onLeaveVoice}
+            className="p-1.5 rounded-md bg-[#da373c] hover:bg-[#a1282c] text-white transition-colors"
+            title="Sair do canal de voz"
+          >
+            <PhoneOff size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Participants Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        {voiceParticipants.map((participant) => (
+          <div
+            key={participant.userId}
+            className={`bg-[#2b2d31] rounded-xl p-3.5 flex flex-col items-center justify-center gap-2 border transition-all relative ${
+              participant.isSpeaking
+                ? 'border-[#23a55a] shadow-[0_0_12px_rgba(35,165,90,0.4)]'
+                : 'border-transparent hover:border-[#3f4147]'
+            }`}
+          >
+            {/* Speaking / Live Badge */}
+            {participant.isScreenSharing && (
+              <span className="absolute top-2 right-2 bg-[#5865F2] text-[9px] font-bold text-white px-1.5 py-0.5 rounded tracking-wider">
+                AO VIVO
+              </span>
+            )}
+
+            {/* Avatar with speaking ring */}
+            <div
+              className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white shadow-md transition-transform ${
+                participant.isSpeaking ? 'scale-105 speaking-ring' : ''
+              }`}
+              style={{ backgroundColor: participant.color }}
+            >
+              {participant.username[0]?.toUpperCase()}
+            </div>
+
+            {/* Username & Audio status */}
+            <div className="flex items-center gap-1.5 max-w-full">
+              <span className="text-xs font-semibold text-[#dbdee1] truncate">
+                {participant.username}
+              </span>
+              {participant.isMuted && (
+                <MicOff size={12} className="text-[#f23f43] shrink-0" />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+dist-electron/
+dist-release/
+*.tsbuildinfo
+
+# SQLite local database
+server/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Environment & Logs
+.env
+*.log
+npm-debug.log*
+
+# System & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
