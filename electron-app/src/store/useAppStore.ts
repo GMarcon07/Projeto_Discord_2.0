@@ -22,6 +22,7 @@ interface AppState {
   // Messages
   messages: Record<string, Message[]>;
   addMessage: (message: Message) => void;
+  markMessageError: (clientMessageId: string) => void;
   setChannelMessages: (channelId: string, messages: Message[]) => void;
 
   // Members / Presence
@@ -237,7 +238,46 @@ export const useAppStore = create<AppState>((set) => ({
   addMessage: (message) =>
     set((state) => {
       const channelMsgs = state.messages[message.channelId] || [];
+
+      // 1. Exact ID already present
       if (channelMsgs.some((m) => m.id === message.id)) return state;
+
+      // 2. Reconcile optimistic message by clientMessageId
+      if (message.clientMessageId) {
+        const tempIdx = channelMsgs.findIndex(
+          (m) => m.id === message.clientMessageId || m.clientMessageId === message.clientMessageId
+        );
+        if (tempIdx !== -1) {
+          const updated = [...channelMsgs];
+          updated[tempIdx] = { ...message, status: 'sent' };
+          return {
+            messages: {
+              ...state.messages,
+              [message.channelId]: updated
+            }
+          };
+        }
+      }
+
+      // 3. Fallback reconciliation: matching temp- ID, sender, and content
+      const recentTempIdx = channelMsgs.findIndex(
+        (m) =>
+          m.id.startsWith('temp-') &&
+          m.userId === message.userId &&
+          m.content === message.content &&
+          Math.abs(new Date(m.createdAt).getTime() - new Date(message.createdAt).getTime()) < 15000
+      );
+      if (recentTempIdx !== -1) {
+        const updated = [...channelMsgs];
+        updated[recentTempIdx] = { ...message, status: 'sent' };
+        return {
+          messages: {
+            ...state.messages,
+            [message.channelId]: updated
+          }
+        };
+      }
+
       return {
         messages: {
           ...state.messages,
@@ -245,11 +285,23 @@ export const useAppStore = create<AppState>((set) => ({
         }
       };
     }),
+  markMessageError: (clientMessageId) =>
+    set((state) => {
+      const nextMessages: Record<string, Message[]> = {};
+      for (const [chanId, msgs] of Object.entries(state.messages)) {
+        nextMessages[chanId] = msgs.map((m) =>
+          m.id === clientMessageId || m.clientMessageId === clientMessageId
+            ? { ...m, status: 'error' }
+            : m
+        );
+      }
+      return { messages: nextMessages };
+    }),
   setChannelMessages: (channelId, messages) =>
     set((state) => ({
       messages: {
         ...state.messages,
-        [channelId]: messages
+        [channelId]: Array.isArray(messages) ? messages : []
       }
     })),
 

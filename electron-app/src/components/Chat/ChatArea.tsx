@@ -6,12 +6,24 @@ import { Message } from '@discord-mini/shared';
 interface ChatAreaProps {
   onSendMessage: (
     content: string,
-    attachment?: { fileUrl: string; fileName: string; fileType: string; fileSize: number }
+    attachment?: { fileUrl: string; fileName: string; fileType: string; fileSize: number },
+    clientMessageId?: string
   ) => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({ onSendMessage }) => {
-  const { currentChannelId, servers, currentServerId, messages, currentUser, members, serverUrl } = useAppStore();
+  const {
+    currentChannelId,
+    setCurrentChannelId,
+    servers,
+    currentServerId,
+    messages,
+    addMessage,
+    markMessageError,
+    currentUser,
+    members,
+    serverUrl
+  } = useAppStore();
   const [inputText, setInputText] = useState('');
   const [pendingFile, setPendingFile] = useState<{ file: File; previewUrl?: string } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -21,8 +33,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ onSendMessage }) => {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const currentServer = servers.find((s) => s.id === currentServerId) || servers[0];
-  const channel = currentServer?.channels.find((c) => c.id === currentChannelId);
-  const channelMessages: Message[] = (currentChannelId && messages[currentChannelId]) || [];
+  const channel =
+    currentServer?.channels.find((c) => c.id === currentChannelId) ||
+    currentServer?.channels.find((c) => c.type === 'text') ||
+    currentServer?.channels[0];
+
+  const activeChannelId = channel?.id || currentChannelId;
+  const channelMessages: Message[] = (activeChannelId && messages[activeChannelId]) || [];
+
+  // Auto-sync channelId if desynchronized
+  useEffect(() => {
+    if (channel && currentChannelId !== channel.id) {
+      setCurrentChannelId(channel.id);
+    }
+  }, [channel?.id, currentChannelId, setCurrentChannelId]);
 
   const scrollToBottom = (smooth = true) => {
     messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
@@ -30,7 +54,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ onSendMessage }) => {
 
   useEffect(() => {
     scrollToBottom(false);
-  }, [currentChannelId]);
+  }, [activeChannelId]);
 
   useEffect(() => {
     scrollToBottom(true);
@@ -58,20 +82,59 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ onSendMessage }) => {
     setPendingFile(null);
   };
 
+  const getAssetUrl = (url?: string) => {
+    if (!url) return null;
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+      return url;
+    }
+    const cleanServer = (serverUrl || '').replace(/\/+$/, '');
+    const cleanPath = url.replace(/^\/+/, '');
+    return `${cleanServer}/${cleanPath}`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = inputText.trim();
     if (!trimmed && !pendingFile) return;
+    if (!channel) return;
 
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const currentText = trimmed;
+    const fileToSend = pendingFile;
+
+    // Reset input form immediately for fluid UI response
+    setInputText('');
+    setPendingFile(null);
+
+    // 1. Optimistic insertion in chat feed
+    const optimisticMsg: Message = {
+      id: tempId,
+      channelId: channel.id,
+      userId: currentUser?.id || 'me',
+      username: currentUser?.username || 'Eu',
+      userColor: currentUser?.color || '#5865F2',
+      content: currentText,
+      fileUrl: fileToSend?.previewUrl,
+      fileName: fileToSend?.file.name,
+      fileType: fileToSend?.file.type,
+      fileSize: fileToSend?.file.size,
+      createdAt: new Date().toISOString(),
+      clientMessageId: tempId,
+      status: fileToSend ? 'sending' : 'sent'
+    };
+    addMessage(optimisticMsg);
+
+    // 2. Upload file if attached
     let attachmentData: { fileUrl: string; fileName: string; fileType: string; fileSize: number } | undefined;
 
-    if (pendingFile) {
+    if (fileToSend) {
       setIsUploading(true);
       try {
         const formData = new FormData();
-        formData.append('file', pendingFile.file);
+        formData.append('file', fileToSend.file);
 
-        const res = await fetch(`${serverUrl}/api/upload`, {
+        const cleanServer = (serverUrl || '').replace(/\/+$/, '');
+        const res = await fetch(`${cleanServer}/api/upload`, {
           method: 'POST',
           body: formData
         });
@@ -85,12 +148,15 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ onSendMessage }) => {
             fileSize: data.fileSize
           };
         } else {
+          console.error('[UPLOAD ERROR]', data);
+          markMessageError(tempId);
           alert(data.error || 'Erro ao enviar ficheiro.');
           setIsUploading(false);
           return;
         }
       } catch (err) {
-        console.error('Erro de upload:', err);
+        console.error('[UPLOAD NETWORK ERROR]', err);
+        markMessageError(tempId);
         alert('Falha ao comunicar com o servidor para enviar o anexo.');
         setIsUploading(false);
         return;
@@ -99,9 +165,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ onSendMessage }) => {
       }
     }
 
-    onSendMessage(trimmed, attachmentData);
-    setInputText('');
-    removePendingFile();
+    // 3. Emit via socket with clientMessageId
+    onSendMessage(currentText, attachmentData, tempId);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -171,10 +236,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ onSendMessage }) => {
 
           // Find sender avatar
           const sender = msg.userId === currentUser?.id ? currentUser : members.find((m) => m.id === msg.userId);
-          const avatarUrl = sender?.avatarUrl;
-          const avatarSrc = avatarUrl ? (avatarUrl.startsWith('http') ? avatarUrl : `${serverUrl}${avatarUrl}`) : null;
+          const avatarSrc = getAssetUrl(sender?.avatarUrl);
 
-          const fileSrc = msg.fileUrl ? (msg.fileUrl.startsWith('http') ? msg.fileUrl : `${serverUrl}${msg.fileUrl}`) : null;
+          const fileSrc = getAssetUrl(msg.fileUrl);
           const isImage = msg.fileType?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp)$/i.test(msg.fileUrl || '');
           const isVideo = msg.fileType?.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(msg.fileUrl || '');
 
@@ -184,24 +248,30 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ onSendMessage }) => {
                 <span className="absolute left-4 opacity-0 group-hover:opacity-100 text-[10px] text-app-textMuted select-none pt-0.5">
                   {formatMessageTime(msg.createdAt)}
                 </span>
-                <p className="text-sm text-app-textNormal leading-relaxed break-words whitespace-pre-wrap select-text">
+                <p className={`text-sm leading-relaxed break-words whitespace-pre-wrap select-text ${msg.status === 'sending' ? 'text-app-textNormal/70' : msg.status === 'error' ? 'text-red-400' : 'text-app-textNormal'}`}>
                   {msg.content}
                 </p>
+                {msg.status === 'sending' && (
+                  <span className="ml-2 text-[10px] text-app-textMuted animate-pulse">a enviar...</span>
+                )}
+                {msg.status === 'error' && (
+                  <span className="ml-2 text-[10px] text-red-400 font-bold">falhou</span>
+                )}
               </div>
             );
           }
 
           return (
-            <div key={msg.id} className="flex gap-3 hover:bg-app-hover -mx-4 px-4 py-1.5 rounded transition-colors">
+            <div key={msg.id} className={`flex gap-3 hover:bg-app-hover -mx-4 px-4 py-1.5 rounded transition-colors ${msg.status === 'sending' ? 'opacity-80' : ''}`}>
               {/* Avatar */}
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0 select-none shadow-sm overflow-hidden"
                 style={{ backgroundColor: msg.userColor || '#5865F2' }}
               >
                 {avatarSrc ? (
-                  <img src={avatarSrc} alt={msg.username} className="w-full h-full object-cover" />
+                  <img src={avatarSrc} alt={msg.username} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }} />
                 ) : (
-                  msg.username[0]?.toUpperCase()
+                  (msg.username || 'U')[0]?.toUpperCase()
                 )}
               </div>
 
@@ -214,10 +284,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ onSendMessage }) => {
                   <span className="text-[11px] text-app-textMuted">
                     {formatMessageTime(msg.createdAt)}
                   </span>
+                  {msg.status === 'sending' && (
+                    <span className="text-[10px] text-app-textMuted flex items-center gap-1 animate-pulse">
+                      <span className="w-2 h-2 rounded-full border border-app-textMuted border-t-white animate-spin" />
+                      A enviar...
+                    </span>
+                  )}
+                  {msg.status === 'error' && (
+                    <span className="text-[10px] text-red-400 font-semibold flex items-center gap-1">
+                      Falha no envio
+                    </span>
+                  )}
                 </div>
 
                 {msg.content && (
-                  <p className="text-sm text-app-textNormal leading-relaxed break-words whitespace-pre-wrap select-text mt-0.5">
+                  <p className={`text-sm leading-relaxed break-words whitespace-pre-wrap select-text mt-0.5 ${msg.status === 'error' ? 'text-red-400' : 'text-app-textNormal'}`}>
                     {msg.content}
                   </p>
                 )}
@@ -236,6 +317,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ onSendMessage }) => {
                           alt={msg.fileName || 'Imagem'}
                           className="max-h-96 w-auto object-cover rounded-xl"
                           loading="lazy"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
                         />
                       </div>
                     )}

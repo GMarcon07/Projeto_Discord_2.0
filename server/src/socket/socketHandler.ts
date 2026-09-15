@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/database';
@@ -8,7 +9,8 @@ import {
   User,
   VoiceParticipant,
   Message,
-  SignalData
+  SignalData,
+  getAvatarColor
 } from '@discord-mini/shared';
 
 export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>) {
@@ -51,6 +53,23 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
         userRow = db.prepare('SELECT id, username, color, avatar_url, created_at FROM users WHERE username = ? COLLATE NOCASE').get(username) as any;
       }
 
+      if (!userRow && username && username.trim().length >= 2) {
+        const trimmed = username.trim();
+        const defaultPinHash = bcrypt.hashSync('1234', 10);
+        const color = getAvatarColor(trimmed);
+        const newId = userId || uuidv4();
+        try {
+          db.prepare(`
+            INSERT INTO users (id, username, pin_hash, color)
+            VALUES (?, ?, ?, ?)
+          `).run(newId, trimmed, defaultPinHash, color);
+          userRow = db.prepare('SELECT id, username, color, avatar_url, created_at FROM users WHERE id = ?').get(newId) as any;
+          console.log(`[SOCKET] Utilizador sincronizado automaticamente no servidor: ${trimmed} (${newId})`);
+        } catch (e) {
+          userRow = db.prepare('SELECT id, username, color, avatar_url, created_at FROM users WHERE username = ? COLLATE NOCASE').get(trimmed) as any;
+        }
+      }
+
       if (!userRow) {
         console.warn(`[SOCKET] Utilizador não reconhecido neste servidor: ${username} (${userId})`);
         socket.emit('auth:required', { message: 'Sessão inválida neste servidor. Por favor entra com o teu PIN.' });
@@ -90,7 +109,7 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
     });
 
     // Chat messaging
-    socket.on('chat:send_message', ({ channelId, content, fileUrl, fileName, fileType, fileSize }) => {
+    socket.on('chat:send_message', ({ channelId, content, fileUrl, fileName, fileType, fileSize, clientMessageId }) => {
       const userInfo = socketToUser.get(socket.id);
       if (!userInfo) {
         console.warn(`[CHAT] Mensagem rejeitada: socket ${socket.id} não autenticado`);
@@ -102,8 +121,39 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
       if (!trimmed && !fileUrl) return;
       if (trimmed.length > 2000) return;
 
+      // 1. Validate target channel or fallback to first available text channel
+      let targetChannelId = channelId;
+      const channelExists = db.prepare('SELECT id FROM channels WHERE id = ?').get(targetChannelId);
+      if (!channelExists) {
+        const fallbackChannel = db.prepare("SELECT id FROM channels WHERE type = 'text' ORDER BY order_index ASC LIMIT 1").get() as any;
+        if (fallbackChannel) {
+          console.warn(`[CHAT] Canal ${channelId} não encontrado. Redirecionando para ${fallbackChannel.id}`);
+          targetChannelId = fallbackChannel.id;
+        } else {
+          console.error('[CHAT] Nenhum canal de texto encontrado na base de dados.');
+          socket.emit('chat:error', { message: 'Canal inválido ou inexistente.', clientMessageId });
+          return;
+        }
+      }
+
+      // 2. Ensure user exists in users table (prevents SQLite FOREIGN KEY constraint failed)
+      const userExists = db.prepare('SELECT id FROM users WHERE id = ?').get(userInfo.userId);
+      if (!userExists) {
+        try {
+          db.prepare('INSERT OR IGNORE INTO users (id, username, pin_hash, color) VALUES (?, ?, ?, ?)').run(
+            userInfo.userId,
+            userInfo.username,
+            'default_pin_hash',
+            userInfo.color || '#5865F2'
+          );
+        } catch (e) {
+          console.error('[CHAT] Erro ao sincronizar utilizador na BD:', e);
+        }
+      }
+
       const messageId = uuidv4();
       const createdAt = new Date().toISOString();
+      const userColor = userInfo.color || '#5865F2';
 
       try {
         db.prepare(`
@@ -111,10 +161,10 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           messageId,
-          channelId,
+          targetChannelId,
           userInfo.userId,
           userInfo.username,
-          userInfo.color,
+          userColor,
           trimmed,
           fileUrl || null,
           fileName || null,
@@ -125,21 +175,23 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
 
         const newMsg: Message = {
           id: messageId,
-          channelId,
+          channelId: targetChannelId,
           userId: userInfo.userId,
           username: userInfo.username,
-          userColor: userInfo.color,
+          userColor: userColor,
           content: trimmed,
           fileUrl: fileUrl || undefined,
           fileName: fileName || undefined,
           fileType: fileType || undefined,
           fileSize: fileSize || undefined,
-          createdAt
+          createdAt,
+          clientMessageId
         };
 
         io.emit('chat:new_message', newMsg);
-      } catch (err) {
+      } catch (err: any) {
         console.error('[CHAT] Erro ao gravar mensagem:', err);
+        socket.emit('chat:error', { message: 'Erro ao gravar mensagem na base de dados.', clientMessageId });
       }
     });
 

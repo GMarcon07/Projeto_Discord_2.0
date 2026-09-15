@@ -38,6 +38,7 @@ export const App: React.FC = () => {
     updateUserAvatar,
     localMutedUsers,
     addMessage,
+    markMessageError,
     setChannelMessages,
     setMembers,
     activeVoiceChannelId,
@@ -95,36 +96,54 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    fetch(`${serverUrl}/api/servers`)
+    const cleanUrl = (serverUrl || '').replace(/\/+$/, '');
+    fetch(`${cleanUrl}/api/servers`)
       .then((res) => res.json())
       .then((data) => {
+        if (!Array.isArray(data) || data.length === 0) return;
         setServers(data);
-        if (data.length > 0 && !currentServerId) {
-          setCurrentServerId(data[0].id);
-          const firstText = data[0].channels.find((c: any) => c.type === 'text') || data[0].channels[0];
-          if (firstText) setCurrentChannelId(firstText.id);
+
+        // Ensure active server exists in data
+        const activeServer = data.find((s: any) => s.id === currentServerId) || data[0];
+        if (activeServer.id !== currentServerId) {
+          setCurrentServerId(activeServer.id);
+        }
+
+        // Ensure active channel exists in activeServer
+        const channelExists = activeServer.channels.some((c: any) => c.id === currentChannelId);
+        if (!channelExists) {
+          const firstText = activeServer.channels.find((c: any) => c.type === 'text') || activeServer.channels[0];
+          if (firstText) {
+            setCurrentChannelId(firstText.id);
+          }
         }
       })
       .catch((err) => console.error('Erro ao carregar servidores:', err));
-  }, [currentUser, serverUrl]);
+  }, [currentUser?.id, serverUrl]);
 
   // 4. Fetch Channel Messages
   useEffect(() => {
     if (!currentChannelId || !currentUser) return;
 
-    fetch(`${serverUrl}/api/channels/${currentChannelId}/messages`)
+    const cleanUrl = (serverUrl || '').replace(/\/+$/, '');
+    fetch(`${cleanUrl}/api/channels/${currentChannelId}/messages`)
       .then((res) => res.json())
       .then((data) => {
-        setChannelMessages(currentChannelId, data);
+        if (Array.isArray(data)) {
+          setChannelMessages(currentChannelId, data);
+        } else {
+          console.warn('[CHAT] Resposta de histórico não é um array válido:', data);
+        }
       })
       .catch((err) => console.error('Erro ao carregar histórico de mensagens:', err));
-  }, [currentChannelId, currentUser, serverUrl]);
+  }, [currentChannelId, currentUser?.id, serverUrl]);
 
   // 5. Socket.io Connection & Event Listeners
   useEffect(() => {
     if (!currentUser) return;
 
-    const socket = io(serverUrl, {
+    const cleanUrl = (serverUrl || '').replace(/\/+$/, '');
+    const socket = io(cleanUrl, {
       transports: ['websocket', 'polling']
     });
     socketRef.current = socket;
@@ -169,9 +188,17 @@ export const App: React.FC = () => {
         if (window.electronAPI?.showNotification) {
           window.electronAPI.showNotification({
             title: `${message.username}`,
-            body: message.content
+            body: message.content || (message.fileName ? `Enviou um anexo: ${message.fileName}` : '')
           });
         }
+      }
+    });
+
+    // Chat Error Handling
+    socket.on('chat:error', ({ message, clientMessageId }) => {
+      console.error('[CHAT ERROR]', message);
+      if (clientMessageId) {
+        markMessageError(clientMessageId);
       }
     });
 
@@ -244,7 +271,7 @@ export const App: React.FC = () => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [currentUser, serverUrl]);
+  }, [currentUser?.id, serverUrl]);
 
   // 6. Reactive Audio & Settings updates while connected to voice
   useEffect(() => {
@@ -440,17 +467,37 @@ export const App: React.FC = () => {
   // 9. Chat Handlers
   const handleSendMessage = (
     content: string,
-    attachment?: { fileUrl: string; fileName: string; fileType: string; fileSize: number }
+    attachment?: { fileUrl: string; fileName: string; fileType: string; fileSize: number },
+    clientMessageId?: string
   ) => {
-    if (!currentChannelId || !socketRef.current) return;
-    socketRef.current.emit('chat:send_message', {
-      channelId: currentChannelId,
-      content,
-      fileUrl: attachment?.fileUrl,
-      fileName: attachment?.fileName,
-      fileType: attachment?.fileType,
-      fileSize: attachment?.fileSize
-    });
+    let targetChannelId = currentChannelId;
+    if (!targetChannelId && servers.length > 0) {
+      const activeServer = servers.find((s) => s.id === currentServerId) || servers[0];
+      const defaultChan = activeServer?.channels.find((c) => c.type === 'text') || activeServer?.channels[0];
+      if (defaultChan) {
+        targetChannelId = defaultChan.id;
+        setCurrentChannelId(defaultChan.id);
+      }
+    }
+
+    if (!targetChannelId) {
+      console.warn('[CHAT] Nenhum canal disponível para enviar mensagem.');
+      return;
+    }
+
+    if (socketRef.current) {
+      socketRef.current.emit('chat:send_message', {
+        channelId: targetChannelId,
+        content,
+        fileUrl: attachment?.fileUrl,
+        fileName: attachment?.fileName,
+        fileType: attachment?.fileType,
+        fileSize: attachment?.fileSize,
+        clientMessageId
+      });
+    } else {
+      console.warn('[CHAT] Socket não inicializado ao enviar mensagem.');
+    }
   };
 
   return (

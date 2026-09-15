@@ -3,7 +3,17 @@ import { useAppStore } from '../../store/useAppStore';
 import { Volume2 } from 'lucide-react';
 
 export const MemberList: React.FC = () => {
-  const { members, voiceParticipants, currentUser, openContextMenu } = useAppStore();
+  const { members, voiceParticipants, currentUser, openContextMenu, serverUrl } = useAppStore();
+
+  const getAvatarSrc = (url?: string) => {
+    if (!url) return null;
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+      return url;
+    }
+    const cleanServer = (serverUrl || '').replace(/\/+$/, '');
+    const cleanPath = url.replace(/^\/+/, '');
+    return `${cleanServer}/${cleanPath}`;
+  };
 
   // Ensure current user is always present in the list
   const displayMembers = [...members];
@@ -39,6 +49,7 @@ export const MemberList: React.FC = () => {
         <div className="space-y-0.5">
           {onlineMembers.map((member) => {
             const speaking = isUserSpeakingInVoice(member.id);
+            const avatarSrc = getAvatarSrc(member.avatarUrl);
             return (
               <div
                 key={member.id}
@@ -48,13 +59,14 @@ export const MemberList: React.FC = () => {
               >
                 {/* Avatar with Online badge */}
                 <div className="relative shrink-0">
-                  {member.avatarUrl ? (
+                  {avatarSrc ? (
                     <img
-                      src={member.avatarUrl}
+                      src={avatarSrc}
                       alt={member.username}
                       className={`w-8 h-8 rounded-full object-cover shadow-sm ${
                         speaking ? 'speaking-ring' : ''
                       }`}
+                      onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
                     />
                   ) : (
                     <div
@@ -92,6 +104,7 @@ export const MemberList: React.FC = () => {
           </h4>
           <div className="space-y-0.5 opacity-60">
             {offlineMembers.map((member) => {
+              const avatarSrc = getAvatarSrc(member.avatarUrl);
               return (
                 <div
                   key={member.id}
@@ -100,11 +113,12 @@ export const MemberList: React.FC = () => {
                 >
                   {/* Avatar with Offline badge */}
                   <div className="relative shrink-0">
-                    {member.avatarUrl ? (
+                    {avatarSrc ? (
                       <img
-                        src={member.avatarUrl}
+                        src={avatarSrc}
                         alt={member.username}
                         className="w-8 h-8 rounded-full object-cover shadow-sm"
+                        onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
                       />
                     ) : (
                       <div

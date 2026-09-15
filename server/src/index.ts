@@ -288,36 +288,58 @@ app.put('/api/users/:userId/color', (req, res) => {
   res.json(result);
 });
 
-// Update User Avatar
-app.post('/api/users/:userId/avatar', uploadAvatar.single('avatar'), (req, res) => {
-  const { userId } = req.params;
-  if (!req.file) {
-    return res.status(400).json({ error: 'Nenhum ficheiro de imagem enviado.' });
-  }
+// Update User Avatar (safe multer error handling)
+app.post('/api/users/:userId/avatar', (req, res) => {
+  uploadAvatar.single('avatar')(req, res, (err: any) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ success: false, message: 'A foto de perfil não pode exceder 15MB.' });
+      }
+      return res.status(400).json({ success: false, message: `Erro ao enviar avatar: ${err.message}` });
+    } else if (err) {
+      return res.status(500).json({ success: false, message: 'Erro interno no processamento da imagem.' });
+    }
 
-  const avatarUrl = `/uploads/avatars/${req.file.filename}`;
-  const result = updateUserAvatar(userId, avatarUrl);
-  if (!result.success) {
-    return res.status(400).json(result);
-  }
+    const { userId } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Nenhum ficheiro de imagem enviado.' });
+    }
 
-  io.emit('user:avatar_updated', { userId, avatarUrl });
-  res.json({ success: true, avatarUrl });
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    const result = updateUserAvatar(userId, avatarUrl);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    io.emit('user:avatar_updated', { userId, avatarUrl });
+    return res.json({ success: true, avatarUrl });
+  });
 });
 
-// Upload File (Photos / Videos up to 100MB)
-app.post('/api/upload', uploadFile.single('file'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Nenhum ficheiro enviado.' });
-  }
+// Upload File (Photos / Videos up to 100MB with safe JSON error handling)
+app.post('/api/upload', (req, res) => {
+  uploadFile.single('file')(req, res, (err: any) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ success: false, error: 'O ficheiro ultrapassa o limite máximo de 100MB.' });
+      }
+      return res.status(400).json({ success: false, error: `Erro no upload: ${err.message}` });
+    } else if (err) {
+      return res.status(500).json({ success: false, error: 'Erro ao processar ficheiro no servidor.' });
+    }
 
-  const fileUrl = `/uploads/files/${req.file.filename}`;
-  res.json({
-    success: true,
-    fileUrl,
-    fileName: req.file.originalname,
-    fileType: req.file.mimetype,
-    fileSize: req.file.size
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'Nenhum ficheiro enviado.' });
+    }
+
+    const fileUrl = `/uploads/files/${req.file.filename}`;
+    return res.json({
+      success: true,
+      fileUrl,
+      fileName: req.file.originalname,
+      fileType: req.file.mimetype,
+      fileSize: req.file.size
+    });
   });
 });
 

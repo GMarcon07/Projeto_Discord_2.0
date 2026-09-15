@@ -17,6 +17,7 @@ export interface ClientToServerEvents {
     fileName?: string;
     fileType?: string;
     fileSize?: number;
+    clientMessageId?: string;
   }) => void;
   'voice:join': (data: { channelId: string }) => void;
   'voice:leave': () => void;
@@ -36,6 +37,7 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   'presence:update': (data: { users: User[] }) => void;
   'chat:new_message': (message: Message) => void;
+  'chat:error': (data: { message: string; clientMessageId?: string }) => void;
   'voice:user_joined': (data: { channelId: string; participant: VoiceParticipant }) => void;
   'voice:user_left': (data: { channelId: string; userId: string }) => void;
   'voice:state_updated': (data: { channelId: string; participant: VoiceParticipant }) => void;

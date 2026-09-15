@@ -37,6 +37,8 @@ export interface Message {
   fileType?: string;
   fileSize?: number;
   createdAt: string;
+  clientMessageId?: string;
+  status?: 'sending' | 'sent' | 'error';
 }
 
 export interface VoiceParticipant {
