@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Server as SocketIOServer } from 'socket.io';
 import { initDatabase, db } from './db/database';
 import { startCleanupScheduler } from './db/cleanup';
-import { authenticateOrRegister, changePin } from './auth/auth';
+import { authenticateOrRegister, changePin, updateUserColor } from './auth/auth';
 import { setupSocketHandlers } from './socket/socketHandler';
 import { ClientToServerEvents, ServerToClientEvents, Server as ServerType, Channel } from '@discord-mini/shared';
 
@@ -208,6 +208,43 @@ app.put('/api/channels/reorder', (req, res) => {
     console.error('Erro ao reordenar canais:', err);
     res.status(500).json({ error: 'Erro ao reordenar canais.' });
   }
+});
+
+// Delete Channel
+app.delete('/api/channels/:channelId', (req, res) => {
+  const { channelId } = req.params;
+  try {
+    const channel = db.prepare('SELECT id, server_id FROM channels WHERE id = ?').get(channelId) as any;
+    if (!channel) {
+      return res.status(404).json({ error: 'Canal não encontrado.' });
+    }
+
+    db.prepare('DELETE FROM messages WHERE channel_id = ?').run(channelId);
+    db.prepare('DELETE FROM channels WHERE id = ?').run(channelId);
+
+    io.emit('channel:deleted', { channelId, serverId: channel.server_id });
+    res.json({ success: true, channelId, serverId: channel.server_id });
+  } catch (err) {
+    console.error('Erro ao eliminar canal:', err);
+    res.status(500).json({ error: 'Erro ao eliminar canal.' });
+  }
+});
+
+// Update User Color / Profile
+app.put('/api/users/:userId/color', (req, res) => {
+  const { userId } = req.params;
+  const { color } = req.body;
+  if (!color) {
+    return res.status(400).json({ error: 'Cor não fornecida.' });
+  }
+
+  const result = updateUserColor(userId, color);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  io.emit('user:color_updated', { userId, color });
+  res.json(result);
 });
 
 // Get Channel Messages (last 100)

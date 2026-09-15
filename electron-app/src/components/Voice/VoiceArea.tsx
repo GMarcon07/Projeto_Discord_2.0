@@ -24,7 +24,8 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
     isDeafened,
     isScreenSharing,
     peerPings,
-    currentUser
+    currentUser,
+    openContextMenu
   } = useAppStore();
 
   if (!activeVoiceChannelId) return null;
@@ -33,15 +34,15 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
   const channel = currentServer?.channels.find((c) => c.id === activeVoiceChannelId);
 
   return (
-    <div className="bg-[#1e1f22] border-b border-[#18191c] p-4 flex flex-col gap-4 select-none">
+    <div className="bg-app-tertiary border-b border-app-border p-4 flex flex-col gap-4 select-none transition-colors duration-200">
       {/* Voice Channel Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Radio size={18} className="text-[#23a55a] animate-pulse" />
-          <h4 className="font-bold text-white text-sm">
+          <h4 className="font-bold text-app-textHeader text-sm">
             {channel?.name || 'Canal de Voz'}
           </h4>
-          <span className="text-xs text-[#949ba4]">
+          <span className="text-xs text-app-textMuted">
             • {voiceParticipants.length} participante{voiceParticipants.length !== 1 ? 's' : ''} conectado{voiceParticipants.length !== 1 ? 's' : ''}
           </span>
         </div>
@@ -53,7 +54,7 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold shadow transition-all ${
               isScreenSharing
                 ? 'bg-[#da373c] text-white hover:bg-[#a1282c]'
-                : 'bg-[#5865F2] text-white hover:bg-[#4752c4]'
+                : 'bg-app-accent text-white hover:bg-app-accentHover'
             }`}
           >
             <Monitor size={14} />
@@ -63,7 +64,7 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
           <button
             onClick={onToggleMute}
             className={`p-1.5 rounded-md transition-colors ${
-              isMuted ? 'bg-[#da373c] text-white' : 'bg-[#2b2d31] text-[#dbdee1] hover:bg-[#35373c]'
+              isMuted ? 'bg-[#da373c] text-white' : 'bg-app-secondary text-app-textNormal hover:bg-app-hover'
             }`}
             title={isMuted ? 'Desativar Mute' : 'Silenciar'}
           >
@@ -73,11 +74,11 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
           <button
             onClick={onToggleDeafen}
             className={`p-1.5 rounded-md transition-colors ${
-              isDeafened ? 'bg-[#da373c] text-white' : 'bg-[#2b2d31] text-[#dbdee1] hover:bg-[#35373c]'
+              isDeafened ? 'bg-[#da373c] text-white' : 'bg-app-secondary text-app-textNormal hover:bg-app-hover'
             }`}
             title={isDeafened ? 'Desativar Ensurdecer' : 'Ensurdecer'}
           >
-            {isDeafened ? <Headphones size={16} /> : <Headphones size={16} />}
+            <Headphones size={16} />
           </button>
 
           <button
@@ -95,15 +96,28 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
         {voiceParticipants.map((participant) => {
           const isLocal = participant.userId === currentUser?.id;
           const pingMs = !isLocal ? peerPings[participant.userId] : undefined;
+          const isRainbow = participant.color === 'rainbow';
 
           return (
             <div
               key={participant.userId}
-              className={`bg-[#2b2d31] rounded-xl p-3.5 flex flex-col items-center justify-center gap-2 border transition-all relative ${
+              onContextMenu={(e) => {
+                e.preventDefault();
+                if (!isLocal) {
+                  openContextMenu(e.clientX, e.clientY, {
+                    id: participant.userId,
+                    username: participant.username,
+                    color: participant.color,
+                    isScreenSharing: participant.isScreenSharing
+                  });
+                }
+              }}
+              className={`bg-app-card rounded-xl p-3.5 flex flex-col items-center justify-center gap-2 border transition-all relative cursor-pointer ${
                 participant.isSpeaking
                   ? 'border-[#23a55a] shadow-[0_0_12px_rgba(35,165,90,0.4)]'
-                  : 'border-transparent hover:border-[#3f4147]'
+                  : 'border-transparent hover:border-white/10'
               }`}
+              title={isLocal ? participant.username : `${participant.username} (Clique c/ botão direito para ajustar volume)`}
             >
               {/* WebRTC Ping Badge */}
               {pingMs !== undefined && (
@@ -122,7 +136,7 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
 
               {/* Speaking / Live Badge */}
               {participant.isScreenSharing && (
-                <span className="absolute top-2 right-2 bg-[#5865F2] text-[9px] font-bold text-white px-1.5 py-0.5 rounded tracking-wider">
+                <span className="absolute top-2 right-2 bg-app-accent text-[9px] font-bold text-white px-1.5 py-0.5 rounded tracking-wider">
                   AO VIVO
                 </span>
               )}
@@ -131,15 +145,15 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
               <div
                 className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white shadow-md transition-transform ${
                   participant.isSpeaking ? 'scale-105 speaking-ring' : ''
-                }`}
-                style={{ backgroundColor: participant.color }}
+                } ${isRainbow ? 'avatar-rainbow' : ''}`}
+                style={!isRainbow ? { backgroundColor: participant.color } : {}}
               >
                 {participant.username[0]?.toUpperCase()}
               </div>
 
               {/* Username & Audio status */}
               <div className="flex items-center gap-1.5 max-w-full">
-                <span className="text-xs font-semibold text-[#dbdee1] truncate">
+                <span className={`text-xs font-semibold text-app-textNormal truncate ${isRainbow ? 'text-rainbow' : ''}`}>
                   {participant.username}
                 </span>
                 {participant.isMuted && (

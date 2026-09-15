@@ -98,3 +98,18 @@ export function changePin(userId: string, currentPin: string, newPin: string): {
   return { success: true, message: 'PIN alterado com sucesso!' };
 }
 
+export function updateUserColor(userId: string, color: string): { success: boolean; message: string; color?: string } {
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId) as any;
+  if (!user) {
+    return { success: false, message: 'Utilizador não encontrado.' };
+  }
+
+  const cleanColor = (color || '').trim();
+  if (!cleanColor) {
+    return { success: false, message: 'Cor inválida.' };
+  }
+
+  db.prepare('UPDATE users SET color = ? WHERE id = ?').run(cleanColor, userId);
+  return { success: true, message: 'Cor atualizada com sucesso!', color: cleanColor };
+}
+

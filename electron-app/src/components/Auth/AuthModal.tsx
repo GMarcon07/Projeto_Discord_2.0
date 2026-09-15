@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { Shield, Server as ServerIcon, User as UserIcon, KeyRound, AlertCircle } from 'lucide-react';
+import { Server as ServerIcon, User as UserIcon, KeyRound, AlertCircle, Globe } from 'lucide-react';
+import logoImg from '../../assets/logo.jpg';
 
 export const AuthModal: React.FC = () => {
   const { currentUser, setCurrentUser, serverUrl, setServerUrl } = useAppStore();
@@ -57,22 +58,24 @@ export const AuthModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-[#313338] border border-[#232428] rounded-lg shadow-2xl w-full max-w-md p-7 text-[#dbdee1] flex flex-col gap-5 animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 backdrop-blur-md">
+      <div className="bg-app-primary border border-app-border rounded-2xl shadow-2xl w-full max-w-md p-8 text-app-textNormal flex flex-col gap-6 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
-        <div className="text-center flex flex-col items-center gap-2">
-          <div className="w-14 h-14 rounded-2xl bg-[#5865F2] flex items-center justify-center text-white shadow-lg shadow-[#5865F2]/20 mb-1">
-            <Shield size={28} />
+        <div className="text-center flex flex-col items-center gap-3">
+          <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-xl ring-2 ring-app-accent/50 shadow-app-accent/20 mb-1">
+            <img src={logoImg} alt="A resenha" className="w-full h-full object-cover" />
           </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Bem-vindo ao Discord Mini</h2>
-          <p className="text-xs text-[#949ba4]">
-            Acesso privado para amigos. Introduz o teu username e PIN numérico.
-          </p>
+          <div>
+            <h2 className="text-2xl font-black text-app-textHeader tracking-tight">A resenha</h2>
+            <p className="text-xs text-app-textMuted mt-1">
+              Comunicação privada para a tua malta. Introduz o teu username e PIN numérico.
+            </p>
+          </div>
         </div>
 
         {error && (
-          <div className="bg-[#da373c]/15 border border-[#da373c]/30 rounded-md p-3 text-xs text-[#fa777c] flex items-center gap-2.5">
+          <div className="bg-red-500/15 border border-red-500/30 rounded-xl p-3 text-xs text-red-400 flex items-center gap-2.5">
             <AlertCircle size={16} className="shrink-0" />
             <span>{error}</span>
           </div>
@@ -81,8 +84,8 @@ export const AuthModal: React.FC = () => {
         {/* Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-[#b5bac1] flex items-center gap-1.5">
-              <UserIcon size={13} />
+            <label className="text-[11px] font-bold uppercase tracking-wider text-app-textMuted flex items-center gap-1.5">
+              <UserIcon size={13} className="text-app-accent" />
               Nome de Utilizador
             </label>
             <input
@@ -92,14 +95,14 @@ export const AuthModal: React.FC = () => {
               placeholder="ex: Gabriel"
               required
               autoFocus
-              className="bg-[#1e1f22] border border-[#232428] rounded-md px-3 py-2.5 text-sm text-white placeholder-[#80848e] focus:outline-none focus:border-[#5865F2] transition-colors"
+              className="bg-app-input border border-app-border rounded-xl px-3.5 py-2.5 text-sm text-app-textHeader placeholder-app-textMuted focus:outline-none focus:border-app-accent transition-colors"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-[#b5bac1] flex items-center gap-1.5">
-              <KeyRound size={13} />
-              PIN (4 a 6 dígitos)
+            <label className="text-[11px] font-bold uppercase tracking-wider text-app-textMuted flex items-center gap-1.5">
+              <KeyRound size={13} className="text-app-accent" />
+              PIN Numérico (4 a 6 dígitos)
             </label>
             <input
               type="password"
@@ -108,39 +111,66 @@ export const AuthModal: React.FC = () => {
               maxLength={6}
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-              placeholder="1234"
+              placeholder="••••"
               required
-              className="bg-[#1e1f22] border border-[#232428] rounded-md px-3 py-2.5 text-sm text-white placeholder-[#80848e] focus:outline-none focus:border-[#5865F2] tracking-widest transition-colors font-mono"
+              className="bg-app-input border border-app-border rounded-xl px-3.5 py-2.5 text-sm text-app-textHeader placeholder-app-textMuted focus:outline-none focus:border-app-accent tracking-widest transition-colors font-mono"
             />
-            <span className="text-[10px] text-[#949ba4]">
+            <span className="text-[11px] text-app-textMuted">
               Se for a tua primeira vez, este PIN criará a tua conta automaticamente.
             </span>
           </div>
 
-          {/* Server Config Accordion */}
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => setShowServerConfig(!showServerConfig)}
-              className="text-xs text-[#5865F2] hover:underline flex items-center gap-1"
-            >
-              <ServerIcon size={12} />
-              {showServerConfig ? 'Ocultar configurações de servidor' : 'Configurar servidor (Render / Railway / Local)'}
-            </button>
+          {/* Quick Server Switcher (Lite vs Host) */}
+          <div className="pt-1 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-app-textMuted">Servidor de Destino</span>
+              <button
+                type="button"
+                onClick={() => setShowServerConfig(!showServerConfig)}
+                className="text-xs text-app-accent hover:underline flex items-center gap-1"
+              >
+                <ServerIcon size={12} />
+                {showServerConfig ? 'Ocultar' : 'Personalizar URL'}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setCustomUrl('https://projeto-discord-2-0.onrender.com')}
+                className={`flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-semibold border transition-all ${
+                  customUrl === 'https://projeto-discord-2-0.onrender.com'
+                    ? 'border-app-accent bg-app-accent/15 text-white shadow-sm'
+                    : 'border-app-border bg-app-card text-app-textMuted hover:bg-app-hover'
+                }`}
+              >
+                <Globe size={13} className="text-blue-400" />
+                <span>Nuvem (Lite)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCustomUrl('http://localhost:3001')}
+                className={`flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-semibold border transition-all ${
+                  customUrl === 'http://localhost:3001'
+                    ? 'border-app-accent bg-app-accent/15 text-white shadow-sm'
+                    : 'border-app-border bg-app-card text-app-textMuted hover:bg-app-hover'
+                }`}
+              >
+                <ServerIcon size={13} className="text-green-400" />
+                <span>Host Local</span>
+              </button>
+            </div>
 
             {showServerConfig && (
-              <div className="mt-2.5 p-3 rounded-md bg-[#2b2d31] border border-[#1e1f22] flex flex-col gap-1.5">
-                <label className="text-[10px] font-semibold text-[#b5bac1] uppercase">URL do Servidor</label>
+              <div className="mt-1 p-3 rounded-xl bg-app-card border border-app-border flex flex-col gap-1.5 animate-in fade-in">
+                <label className="text-[10px] font-semibold text-app-textMuted uppercase">URL Personalizada</label>
                 <input
                   type="url"
                   value={customUrl}
                   onChange={(e) => setCustomUrl(e.target.value)}
                   placeholder="http://localhost:3001"
-                  className="bg-[#1e1f22] border border-[#3b3e45] rounded px-2.5 py-1.5 text-xs text-white placeholder-[#80848e] focus:outline-none focus:border-[#5865F2]"
+                  className="bg-app-input border border-app-border rounded-lg px-2.5 py-1.5 text-xs text-app-textHeader placeholder-app-textMuted focus:outline-none focus:border-app-accent"
                 />
-                <span className="text-[10px] text-[#949ba4]">
-                  Usa <code className="text-white">http://localhost:3001</code> em local ou a URL gratuita do teu Render.com / Railway.
-                </span>
               </div>
             )}
           </div>
@@ -148,12 +178,13 @@ export const AuthModal: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="mt-2 w-full bg-[#5865F2] hover:bg-[#4752c4] disabled:opacity-50 text-white font-medium py-2.5 px-4 rounded-md text-sm transition-all shadow-md active:scale-[0.98]"
+            className="mt-3 w-full bg-app-accent hover:bg-app-accentHover disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl text-sm transition-all shadow-md active:scale-[0.98]"
           >
-            {loading ? 'A autenticar...' : 'Entrar / Registar'}
+            {loading ? 'A ligar...' : 'Entrar na Resenha'}
           </button>
         </form>
       </div>
     </div>
   );
 };
+

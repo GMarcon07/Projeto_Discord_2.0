@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Minus, Square, X, Copy } from 'lucide-react';
+import logoImg from '../../assets/logo.jpg';
 
 export const TitleBar: React.FC = () => {
   const [isMaximized, setIsMaximized] = useState(false);
@@ -25,31 +26,35 @@ export const TitleBar: React.FC = () => {
   };
 
   return (
-    <header className="h-7 w-full bg-[#202225] flex items-center justify-between px-3 select-none drag-region text-xs font-semibold text-[#96989d] border-b border-[#18191c] z-50">
+    <header className="h-8 w-full bg-app-tertiary flex items-center justify-between px-3 select-none drag-region text-xs font-semibold text-app-textMuted border-b border-app-border z-50 transition-colors duration-200">
       <div className="flex items-center gap-2">
-        <span className="w-2.5 h-2.5 rounded-full bg-[#5865F2] inline-block"></span>
-        <span className="text-[#dcddde] tracking-wide text-xs">Discord Mini</span>
+        <img
+          src={logoImg}
+          alt="A resenha"
+          className="w-4 h-4 rounded object-cover shadow-sm inline-block"
+        />
+        <span className="text-app-textHeader font-bold tracking-wide text-xs">A resenha</span>
       </div>
 
       {isElectron && (
         <div className="flex items-center no-drag h-full">
           <button
             onClick={handleMinimize}
-            className="h-full px-3.5 hover:bg-[#36393f] text-[#dcddde] flex items-center justify-center transition-colors"
+            className="h-full px-3.5 hover:bg-app-hover text-app-textNormal flex items-center justify-center transition-colors"
             title="Minimizar"
           >
             <Minus size={13} />
           </button>
           <button
             onClick={handleMaximize}
-            className="h-full px-3.5 hover:bg-[#36393f] text-[#dcddde] flex items-center justify-center transition-colors"
+            className="h-full px-3.5 hover:bg-app-hover text-app-textNormal flex items-center justify-center transition-colors"
             title={isMaximized ? 'Restaurar' : 'Maximizar'}
           >
             {isMaximized ? <Copy size={11} /> : <Square size={11} />}
           </button>
           <button
             onClick={handleClose}
-            className="h-full px-3.5 hover:bg-[#ed4245] hover:text-white text-[#dcddde] flex items-center justify-center transition-colors"
+            className="h-full px-3.5 hover:bg-[#ed4245] hover:text-white text-app-textNormal flex items-center justify-center transition-colors"
             title="Fechar"
           >
             <X size={14} />

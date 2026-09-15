@@ -15,8 +15,8 @@ export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShar
     setActiveViewingScreenUserId,
     voiceParticipants,
     currentUser,
-    screenShareVolume,
-    setScreenShareVolume,
+    screenShareVolumes,
+    setScreenShareUserVolume,
     peerPings,
     streamQuality
   } = useAppStore();
@@ -60,6 +60,10 @@ export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShar
     streamEntries[0] ||
     null;
 
+  const currentStreamVolume = activeEntry && !activeEntry.isLocal
+    ? (screenShareVolumes[activeEntry.id] ?? 100)
+    : 0;
+
   // Sync active stream with <video> element
   useEffect(() => {
     if (videoRef.current && activeEntry) {
@@ -68,17 +72,17 @@ export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShar
     }
   }, [activeEntry?.stream, activeEntry?.id]);
 
-  // Adjust volume for remote screen audio
+  // Adjust volume for remote screen audio individually per user
   useEffect(() => {
     if (videoRef.current && activeEntry) {
       if (activeEntry.isLocal) {
         videoRef.current.muted = true;
       } else {
         videoRef.current.muted = false;
-        videoRef.current.volume = Math.max(0, Math.min(1, screenShareVolume / 100));
+        videoRef.current.volume = Math.max(0, Math.min(1, currentStreamVolume / 100));
       }
     }
-  }, [screenShareVolume, activeEntry?.isLocal]);
+  }, [currentStreamVolume, activeEntry?.isLocal, activeEntry?.id]);
 
   if (!activeEntry) return null;
 
@@ -98,7 +102,7 @@ export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShar
   return (
     <div
       ref={containerRef}
-      className="relative bg-black border-b border-[#1f2023] w-full flex flex-col items-center justify-center overflow-hidden max-h-[60vh] aspect-video group select-none"
+      className="relative bg-black border-b border-app-border w-full flex flex-col items-center justify-center overflow-hidden max-h-[60vh] aspect-video group select-none transition-colors duration-200"
     >
       {/* Stream Tabs if multiple streams exist */}
       {streamEntries.length > 1 && (
@@ -111,8 +115,8 @@ export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShar
                 onClick={() => setActiveViewingScreenUserId(entry.id)}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                   isSelected
-                    ? 'bg-[#5865F2] text-white shadow'
-                    : 'text-[#949ba4] hover:text-white hover:bg-white/10'
+                    ? 'bg-app-accent text-white shadow'
+                    : 'text-app-textMuted hover:text-white hover:bg-white/10'
                 }`}
               >
                 <Monitor size={12} />
@@ -133,7 +137,7 @@ export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShar
 
       {/* Info Badge (when only 1 stream is present) */}
       {streamEntries.length === 1 && (
-        <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-semibold text-white z-20">
+        <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-semibold text-white z-20 border border-white/10">
           <Radio size={14} className="text-[#f23f43] animate-pulse" />
           <span>{activeEntry.name}</span>
           <span className="bg-[#23a55a] text-[10px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
@@ -147,7 +151,7 @@ export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShar
         {/* Ping MS Badge (for remote streams) */}
         {pingMs !== undefined && (
           <div
-            className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-medium text-white border border-white/5"
+            className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-medium text-white border border-white/10"
             title={`Latência RTT estimada: ${pingMs} ms`}
           >
             <span
@@ -159,20 +163,20 @@ export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShar
           </div>
         )}
 
-        {/* Remote Screen Audio Volume Slider */}
+        {/* Remote Screen Audio Individual Volume Slider */}
         {!activeEntry.isLocal && (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs text-white border border-white/5">
-            <Volume2 size={13} className="text-[#949ba4]" />
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs text-white border border-white/10">
+            <Volume2 size={13} className="text-app-textMuted" />
             <input
               type="range"
               min="0"
               max="100"
-              value={screenShareVolume}
-              onChange={(e) => setScreenShareVolume(Number(e.target.value))}
-              className="w-16 h-1 bg-[#4e5058] rounded-lg appearance-none cursor-pointer accent-[#5865F2]"
-              title={`Volume do áudio partilhado: ${screenShareVolume}%`}
+              value={currentStreamVolume}
+              onChange={(e) => setScreenShareUserVolume(activeEntry.id, Number(e.target.value))}
+              className="w-16 h-1 bg-[#4e5058] rounded-lg appearance-none cursor-pointer accent-[#23a55a]"
+              title={`Volume do som desta partilha: ${currentStreamVolume}%`}
             />
-            <span className="text-[10px] w-6 text-right font-mono">{screenShareVolume}%</span>
+            <span className="text-[10px] w-6 text-right font-mono">{currentStreamVolume}%</span>
           </div>
         )}
 
@@ -190,7 +194,7 @@ export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShar
         {/* Fullscreen Button */}
         <button
           onClick={toggleFullscreen}
-          className="bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg backdrop-blur-md transition-colors"
+          className="bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg backdrop-blur-md transition-colors border border-white/10"
           title={isFullscreen ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'}
         >
           {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}

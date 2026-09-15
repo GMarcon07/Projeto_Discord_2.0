@@ -1,7 +1,7 @@
 @echo off
-title Discord Mini - Aplicacao Desktop
+title A resenha - Aplicacao Desktop
 echo ========================================================
-echo   Iniciando Aplicacao Desktop Discord Mini (Electron)
+echo   Iniciando Aplicacao Desktop A resenha (Electron)
 echo ========================================================
 cd /d "%~dp0"
 

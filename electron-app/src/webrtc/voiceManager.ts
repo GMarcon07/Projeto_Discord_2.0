@@ -162,6 +162,17 @@ export class VoiceManager {
     }
   }
 
+  setLocalMuted(userId: string, muted: boolean) {
+    const peer = this.peers.get(userId);
+    if (peer) {
+      peer.audioEl.muted = muted || this.isDeafened;
+      if (peer.gainNode) {
+        const vol = muted ? 0 : (this.userVolumes.get(userId) ?? 100) / 100;
+        peer.gainNode.gain.setValueAtTime(vol, peer.audioCtx?.currentTime || 0);
+      }
+    }
+  }
+
   setMute(mute: boolean) {
     this.isMuted = mute;
     if (this.localAudioStream) {

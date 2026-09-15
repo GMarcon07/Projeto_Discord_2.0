@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { MessageSquare, Compass, Shield, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import logoImg from '../../assets/logo.jpg';
 
 export const ServerSidebar: React.FC = () => {
   const { servers, currentServerId, setCurrentServerId, setCurrentChannelId, setCreateServerOpen } = useAppStore();
@@ -15,33 +16,40 @@ export const ServerSidebar: React.FC = () => {
     }
   };
 
+  const isHomeSelected = servers.length > 0 && currentServerId === servers[0]?.id;
+
   return (
-    <nav className="w-[72px] bg-[#1e1f22] flex flex-col items-center py-3 gap-2 shrink-0 border-r border-[#18191c]">
-      {/* Home / Discord button */}
+    <nav className="w-[72px] bg-app-tertiary flex flex-col items-center py-3 gap-2 shrink-0 border-r border-app-border select-none transition-colors duration-200">
+      {/* Brand / Home "A resenha" button */}
       <div className="relative group flex items-center justify-center w-full">
         <div
           className={`absolute left-0 w-1 bg-white rounded-r-full transition-all duration-200 ${
-            !currentServerId ? 'h-10' : 'h-2 group-hover:h-5'
+            isHomeSelected ? 'h-10' : 'h-2 group-hover:h-5'
           }`}
         />
         <button
           onClick={() => {
             if (servers.length > 0) handleSelectServer(servers[0].id);
           }}
-          className={`w-12 h-12 rounded-[24px] group-hover:rounded-[16px] transition-all duration-200 flex items-center justify-center text-white shadow-md ${
-            !currentServerId ? 'bg-[#5865F2] rounded-[16px]' : 'bg-[#313338] group-hover:bg-[#5865F2]'
+          className={`w-12 h-12 rounded-[24px] group-hover:rounded-[16px] transition-all duration-200 flex items-center justify-center text-white shadow-md overflow-hidden p-1 ${
+            isHomeSelected ? 'bg-app-accent rounded-[16px] ring-2 ring-white/20' : 'bg-app-secondary hover:bg-app-accent'
           }`}
-          title="Início"
+          title="A resenha - Início"
         >
-          <Shield size={24} />
+          <img
+            src={logoImg}
+            alt="A resenha"
+            className="w-full h-full object-cover rounded-[20px] group-hover:rounded-[14px] transition-all duration-200"
+          />
         </button>
       </div>
 
-      <div className="w-8 h-[2px] bg-[#35363c] rounded-full my-1" />
+      <div className="w-8 h-[2px] bg-white/10 rounded-full my-1" />
 
       {/* Server List */}
       <div className="flex flex-col gap-2 w-full overflow-y-auto overflow-x-hidden items-center">
-        {servers.map((server) => {
+        {servers.map((server, idx) => {
+          // Skip the first server if it's the home server or show all
           const isSelected = currentServerId === server.id;
           const initials = server.name
             .split(' ')
@@ -62,12 +70,12 @@ export const ServerSidebar: React.FC = () => {
                 onClick={() => handleSelectServer(server.id)}
                 className={`w-12 h-12 rounded-[24px] group-hover:rounded-[16px] transition-all duration-200 flex items-center justify-center font-bold text-sm tracking-wide shadow-md ${
                   isSelected
-                    ? 'bg-[#5865F2] text-white rounded-[16px]'
-                    : 'bg-[#313338] text-[#dbdee1] group-hover:bg-[#5865F2] group-hover:text-white'
+                    ? 'bg-app-accent text-white rounded-[16px]'
+                    : 'bg-app-secondary text-app-normal group-hover:bg-app-accent group-hover:text-white'
                 }`}
                 title={server.name}
               >
-                {initials || 'DM'}
+                {initials || 'AR'}
               </button>
             </div>
           );
@@ -77,7 +85,7 @@ export const ServerSidebar: React.FC = () => {
         <div className="relative group flex items-center justify-center w-full mt-1">
           <button
             onClick={() => setCreateServerOpen(true)}
-            className="w-12 h-12 rounded-[24px] group-hover:rounded-[16px] transition-all duration-200 flex items-center justify-center bg-[#313338] text-[#23a55a] group-hover:bg-[#23a55a] group-hover:text-white shadow-md"
+            className="w-12 h-12 rounded-[24px] group-hover:rounded-[16px] transition-all duration-200 flex items-center justify-center bg-app-secondary text-[#23a55a] group-hover:bg-[#23a55a] group-hover:text-white shadow-md"
             title="Adicionar Servidor"
           >
             <Plus size={22} />

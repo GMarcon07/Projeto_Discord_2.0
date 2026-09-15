@@ -12,7 +12,8 @@ import {
   ChevronDown,
   Plus,
   Settings,
-  GripVertical
+  GripVertical,
+  Trash2
 } from 'lucide-react';
 import { Channel } from '@discord-mini/shared';
 
@@ -42,6 +43,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
     isDeafened,
     serverUrl,
     setServerChannels,
+    removeChannelFromServer,
     setSettingsOpen,
     setCreateChannelOpen
   } = useAppStore();
@@ -102,19 +104,38 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
     }
   };
 
+  const handleDeleteChannel = async (e: React.MouseEvent, channel: Channel) => {
+    e.stopPropagation();
+    if (!currentServer) return;
+    if (confirm(`Tens a certeza que pretendes eliminar o canal "#${channel.name}"?`)) {
+      try {
+        const res = await fetch(`${serverUrl}/api/channels/${channel.id}`, {
+          method: 'DELETE'
+        });
+        if (res.ok) {
+          removeChannelFromServer(currentServer.id, channel.id);
+        }
+      } catch (err) {
+        console.error('Erro ao eliminar canal:', err);
+      }
+    }
+  };
+
+  const isRainbowUser = currentUser?.color === 'rainbow';
+
   return (
-    <aside className="w-60 bg-[#2b2d31] flex flex-col shrink-0 select-none border-r border-[#1f2023]">
+    <aside className="w-60 bg-app-secondary flex flex-col shrink-0 select-none border-r border-app-border transition-colors duration-200">
       {/* Server Header */}
-      <div className="h-12 border-b border-[#1f2023] px-4 flex items-center justify-between font-bold text-white text-sm shadow-sm cursor-pointer hover:bg-[#35373c] transition-colors">
+      <div className="h-12 border-b border-app-border px-4 flex items-center justify-between font-bold text-app-textHeader text-sm shadow-sm cursor-pointer hover:bg-app-hover transition-colors">
         <span className="truncate">{currentServer?.name || 'Servidor'}</span>
-        <ChevronDown size={16} className="text-[#949ba4]" />
+        <ChevronDown size={16} className="text-app-textMuted" />
       </div>
 
       {/* Channel list */}
       <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
         {/* Text Channels */}
         <div>
-          <div className="px-2 mb-1 text-[11px] font-bold uppercase tracking-wider text-[#949ba4] flex items-center justify-between group">
+          <div className="px-2 mb-1 text-[11px] font-bold uppercase tracking-wider text-app-textMuted flex items-center justify-between group">
             <span>Canais de Texto</span>
             <button
               onClick={() => setCreateChannelOpen(true, 'text')}
@@ -134,19 +155,26 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                   onDragStart={(e) => handleDragStart(e, channel.id)}
                   onDragOver={handleDragOver}
                   onDrop={(e) => handleDrop(e, channel.id)}
-                  className="group relative"
+                  className="group relative flex items-center"
                 >
                   <button
                     onClick={() => setCurrentChannelId(channel.id)}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       isSelected
-                        ? 'bg-[#404249] text-white'
-                        : 'text-[#949ba4] hover:bg-[#35373c] hover:text-[#dbdee1]'
+                        ? 'bg-app-hover text-white font-semibold'
+                        : 'text-app-textMuted hover:bg-app-hover hover:text-app-textNormal'
                     }`}
                   >
                     <GripVertical size={12} className="opacity-0 group-hover:opacity-40 -ml-1 shrink-0 cursor-grab" />
-                    <Hash size={18} className="shrink-0 text-[#80848e]" />
-                    <span className="truncate">{channel.name}</span>
+                    <Hash size={18} className="shrink-0 text-app-textMuted" />
+                    <span className="truncate flex-1 text-left">{channel.name}</span>
+                  </button>
+                  <button
+                    onClick={(e) => handleDeleteChannel(e, channel)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-app-textMuted hover:text-[#f23f43] rounded transition-all mr-1"
+                    title="Eliminar canal"
+                  >
+                    <Trash2 size={13} />
                   </button>
                 </div>
               );
@@ -156,7 +184,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
 
         {/* Voice Channels */}
         <div>
-          <div className="px-2 mb-1 text-[11px] font-bold uppercase tracking-wider text-[#949ba4] flex items-center justify-between group">
+          <div className="px-2 mb-1 text-[11px] font-bold uppercase tracking-wider text-app-textMuted flex items-center justify-between group">
             <span>Canais de Voz</span>
             <button
               onClick={() => setCreateChannelOpen(true, 'voice')}
@@ -178,59 +206,73 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                   onDrop={(e) => handleDrop(e, channel.id)}
                   className="space-y-0.5 group"
                 >
-                  <button
-                    onClick={() => {
-                      if (!isConnected) {
-                        onJoinVoice(channel.id);
-                      }
-                    }}
-                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                      isConnected
-                        ? 'bg-[#35373c] text-[#23a55a]'
-                        : 'text-[#949ba4] hover:bg-[#35373c] hover:text-[#dbdee1]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <GripVertical size={12} className="opacity-0 group-hover:opacity-40 -ml-1 shrink-0 cursor-grab" />
-                      <Volume2 size={18} className={`shrink-0 ${isConnected ? 'text-[#23a55a]' : 'text-[#80848e]'}`} />
-                      <span className="truncate">{channel.name}</span>
-                    </div>
-                    {isConnected && (
-                      <span className="text-[10px] bg-[#23a55a]/20 text-[#23a55a] px-1.5 py-0.5 rounded font-bold">
-                        Ligado
-                      </span>
-                    )}
-                  </button>
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => {
+                        if (!isConnected) {
+                          onJoinVoice(channel.id);
+                        }
+                      }}
+                      className={`flex-1 flex items-center justify-between px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        isConnected
+                          ? 'bg-app-hover text-[#23a55a] font-semibold'
+                          : 'text-app-textMuted hover:bg-app-hover hover:text-app-textNormal'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <GripVertical size={12} className="opacity-0 group-hover:opacity-40 -ml-1 shrink-0 cursor-grab" />
+                        <Volume2 size={18} className={`shrink-0 ${isConnected ? 'text-[#23a55a]' : 'text-app-textMuted'}`} />
+                        <span className="truncate">{channel.name}</span>
+                      </div>
+                      {isConnected && (
+                        <span className="text-[10px] bg-[#23a55a]/20 text-[#23a55a] px-1.5 py-0.5 rounded font-bold">
+                          Ligado
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteChannel(e, channel)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-app-textMuted hover:text-[#f23f43] rounded transition-all mr-1"
+                      title="Eliminar canal"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
 
                   {/* Connected participants list under this channel */}
                   {isConnected && voiceParticipants.length > 0 && (
                     <div className="pl-6 pr-2 py-1 space-y-1">
-                      {voiceParticipants.map((p) => (
-                        <div
-                          key={p.userId}
-                          className="flex items-center justify-between py-0.5 text-xs text-[#dbdee1]"
-                        >
-                          <div className="flex items-center gap-2 truncate">
-                            <div
-                              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 ${
-                                p.isSpeaking ? 'speaking-ring' : ''
-                              }`}
-                              style={{ backgroundColor: p.color }}
-                            >
-                              {p.username[0]?.toUpperCase()}
-                            </div>
-                            <span className="truncate">{p.username}</span>
-                          </div>
-                          <div className="flex items-center gap-1 text-[#80848e]">
-                            {p.isMuted && <MicOff size={12} className="text-[#f23f43]" />}
-                            {p.isScreenSharing && (
-                              <span className="text-[9px] bg-[#5865F2] text-white px-1 rounded font-semibold">
-                                AO VIVO
+                      {voiceParticipants.map((p) => {
+                        const pIsRainbow = p.color === 'rainbow';
+                        return (
+                          <div
+                            key={p.userId}
+                            className="flex items-center justify-between py-0.5 text-xs text-app-textNormal"
+                          >
+                            <div className="flex items-center gap-2 truncate">
+                              <div
+                                className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 ${
+                                  p.isSpeaking ? 'speaking-ring' : ''
+                                } ${pIsRainbow ? 'avatar-rainbow' : ''}`}
+                                style={!pIsRainbow ? { backgroundColor: p.color } : {}}
+                              >
+                                {p.username[0]?.toUpperCase()}
+                              </div>
+                              <span className={`truncate ${pIsRainbow ? 'text-rainbow' : ''}`}>
+                                {p.username}
                               </span>
-                            )}
+                            </div>
+                            <div className="flex items-center gap-1 text-app-textMuted">
+                              {p.isMuted && <MicOff size={12} className="text-[#f23f43]" />}
+                              {p.isScreenSharing && (
+                                <span className="text-[9px] bg-app-accent text-white px-1 rounded font-semibold">
+                                  AO VIVO
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -242,19 +284,19 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
 
       {/* Voice Connection Status Bar (when connected) */}
       {activeVoiceChannel && (
-        <div className="bg-[#232428] border-t border-[#1f2023] p-2.5 flex items-center justify-between">
+        <div className="bg-app-tertiary border-t border-app-border p-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs">
             <Radio size={16} className="text-[#23a55a] animate-pulse" />
             <div className="flex flex-col">
               <span className="font-semibold text-[#23a55a] text-[11px] leading-tight">Voz Ligada</span>
-              <span className="text-[10px] text-[#949ba4] truncate max-w-[120px]">
+              <span className="text-[10px] text-app-textMuted truncate max-w-[120px]">
                 {activeVoiceChannel.name} / RTC Mesh
               </span>
             </div>
           </div>
           <button
             onClick={onLeaveVoice}
-            className="p-1.5 rounded hover:bg-[#35373c] text-[#f23f43] hover:text-[#da373c] transition-colors"
+            className="p-1.5 rounded hover:bg-app-hover text-[#f23f43] hover:text-[#da373c] transition-colors"
             title="Desconectar do canal de voz"
           >
             <PhoneOff size={16} />
@@ -264,7 +306,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
 
       {/* User Bar with Settings Button */}
       {currentUser && (
-        <div className="h-[52px] bg-[#232428] px-2 flex items-center justify-between border-t border-[#1f2023]">
+        <div className="h-[52px] bg-app-tertiary px-2 flex items-center justify-between border-t border-app-border">
           {/* User info */}
           <div
             onClick={() => setSettingsOpen(true)}
@@ -273,26 +315,28 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
           >
             <div className="relative">
               <div
-                className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white shadow"
-                style={{ backgroundColor: currentUser.color }}
+                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white shadow ${
+                  isRainbowUser ? 'avatar-rainbow' : ''
+                }`}
+                style={!isRainbowUser ? { backgroundColor: currentUser.color } : {}}
               >
                 {currentUser.username[0]?.toUpperCase()}
               </div>
-              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#23a55a] border-2 border-[#232428]" />
+              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#23a55a] border-2 border-app-tertiary" />
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-semibold text-white truncate leading-tight">
+              <span className={`text-xs font-semibold text-app-textHeader truncate leading-tight ${isRainbowUser ? 'text-rainbow' : ''}`}>
                 {currentUser.username}
               </span>
-              <span className="text-[10px] text-[#949ba4] leading-tight">Online</span>
+              <span className="text-[10px] text-app-textMuted leading-tight">Online</span>
             </div>
           </div>
 
           {/* Controls */}
-          <div className="flex items-center gap-0.5 text-[#b5bac1]">
+          <div className="flex items-center gap-0.5 text-app-textMuted">
             <button
               onClick={onToggleMute}
-              className={`p-1.5 rounded hover:bg-[#35373c] transition-colors ${
+              className={`p-1.5 rounded hover:bg-app-hover transition-colors ${
                 isMuted ? 'text-[#f23f43]' : 'hover:text-white'
               }`}
               title={isMuted ? 'Ativar microfone' : 'Silenciar microfone'}
@@ -301,7 +345,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
             </button>
             <button
               onClick={onToggleDeafen}
-              className={`p-1.5 rounded hover:bg-[#35373c] transition-colors ${
+              className={`p-1.5 rounded hover:bg-app-hover transition-colors ${
                 isDeafened ? 'text-[#f23f43]' : 'hover:text-white'
               }`}
               title={isDeafened ? 'Ativar som' : 'Ensurdecer'}
@@ -310,14 +354,14 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
             </button>
             <button
               onClick={() => setSettingsOpen(true)}
-              className="p-1.5 rounded hover:bg-[#35373c] hover:text-white transition-colors"
+              className="p-1.5 rounded hover:bg-app-hover hover:text-white transition-colors"
               title="Definições"
             >
               <Settings size={16} />
             </button>
             <button
               onClick={handleLogout}
-              className="p-1.5 rounded hover:bg-[#35373c] hover:text-[#f23f43] transition-colors"
+              className="p-1.5 rounded hover:bg-app-hover hover:text-[#f23f43] transition-colors"
               title="Terminar sessão"
             >
               <LogOut size={16} />

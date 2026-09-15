@@ -35,6 +35,8 @@ export interface ServerToClientEvents {
   'voice:room_participants': (data: { channelId: string; participants: VoiceParticipant[] }) => void;
   'webrtc:signal': (data: { fromUserId: string; signal: SignalData }) => void;
   'channel:created': (data: { channel: Channel }) => void;
+  'channel:deleted': (data: { channelId: string; serverId: string }) => void;
   'channel:reordered': (data: { serverId: string; channels: Channel[] }) => void;
   'server:created': (data: { server: Server }) => void;
+  'user:color_updated': (data: { userId: string; color: string }) => void;
 }

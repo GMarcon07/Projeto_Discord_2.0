@@ -9,6 +9,7 @@
   --bg-secondary: #2b2d31;
   --bg-primary: #313338;
   --bg-input: #383a40;
+  --bg-card: #2b2d31;
   --border-color: #1f2023;
   --bg-hover: #35373c;
 
@@ -16,6 +17,8 @@
   --text-muted: #949ba4;
   --text-header: #ffffff;
 
+  --accent-color: #5865f2;
+  --accent-hover: #4752c4;
   --blurple: #5865f2;
   --blurple-hover: #4752c4;
   --green: #23a55a;
@@ -31,6 +34,7 @@
   --bg-secondary: #080808;
   --bg-primary: #101010;
   --bg-input: #1a1a1a;
+  --bg-card: #0e0e0e;
   --border-color: #222222;
   --bg-hover: #202020;
 
@@ -38,6 +42,8 @@
   --text-muted: #888888;
   --text-header: #ffffff;
 
+  --accent-color: #5865f2;
+  --accent-hover: #4752c4;
   --blurple: #5865f2;
   --blurple-hover: #4752c4;
   --green: #23a55a;
@@ -53,6 +59,7 @@
   --bg-secondary: #0f172a;
   --bg-primary: #1e293b;
   --bg-input: #334155;
+  --bg-card: #142036;
   --border-color: #1e293b;
   --bg-hover: #283548;
 
@@ -60,6 +67,8 @@
   --text-muted: #94a3b8;
   --text-header: #f8fafc;
 
+  --accent-color: #3b82f6;
+  --accent-hover: #2563eb;
   --blurple: #3b82f6;
   --blurple-hover: #2563eb;
   --green: #10b981;
@@ -75,6 +84,7 @@
   --bg-secondary: #f2f3f5;
   --bg-primary: #ffffff;
   --bg-input: #ebedef;
+  --bg-card: #f8f9fa;
   --border-color: #d1d5db;
   --bg-hover: #e5e7eb;
 
@@ -82,6 +92,8 @@
   --text-muted: #747f8d;
   --text-header: #060607;
 
+  --accent-color: #5865f2;
+  --accent-hover: #4752c4;
   --blurple: #5865f2;
   --blurple-hover: #4752c4;
   --green: #23a55a;
@@ -150,4 +162,33 @@ body {
 }
 .no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* Animated Rainbow RGB Gamer Avatar */
+@keyframes rainbow-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.avatar-rainbow {
+  background: linear-gradient(135deg, #ff0055, #ff5500, #ffcc00, #00ff66, #00ccff, #7700ff, #ff00aa) !important;
+  background-size: 300% 300% !important;
+  animation: rainbow-flow 4s ease infinite !important;
+  box-shadow: 0 0 10px rgba(255, 0, 128, 0.4), 0 0 16px rgba(0, 204, 255, 0.3) !important;
+}
+
+.text-rainbow {
+  background: linear-gradient(90deg, #ff0055, #ffcc00, #00ff66, #00ccff, #7700ff) !important;
+  background-size: 300% 300% !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  animation: rainbow-flow 4s ease infinite !important;
+  font-weight: bold;
 }

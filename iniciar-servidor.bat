@@ -1,7 +1,7 @@
 @echo off
-title Discord Mini - Servidor Backend
+title A resenha - Servidor Backend
 echo ========================================================
-echo   Iniciando Servidor de Sinalizacao Discord Mini
+echo   Iniciando Servidor de Sinalizacao A resenha
 echo   Porta: 3001
 echo ========================================================
 cd /d "%~dp0"

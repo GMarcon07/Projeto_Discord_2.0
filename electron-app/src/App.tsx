@@ -18,6 +18,7 @@ import { MemberList } from './components/MemberList/MemberList';
 import { SettingsModal } from './components/Settings/SettingsModal';
 import { CreateChannelModal } from './components/Modals/CreateChannelModal';
 import { CreateServerModal } from './components/Modals/CreateServerModal';
+import { UserContextMenu } from './components/User/UserContextMenu';
 
 export const App: React.FC = () => {
   const {
@@ -31,7 +32,10 @@ export const App: React.FC = () => {
     setCurrentServerId,
     setCurrentChannelId,
     addChannelToServer,
+    removeChannelFromServer,
     setServerChannels,
+    updateUserColor,
+    localMutedUsers,
     addMessage,
     setChannelMessages,
     setMembers,
@@ -188,8 +192,16 @@ export const App: React.FC = () => {
       addChannelToServer(channel);
     });
 
+    socket.on('channel:deleted', ({ serverId, channelId }) => {
+      removeChannelFromServer(serverId, channelId);
+    });
+
     socket.on('channel:reordered', ({ serverId, channels }) => {
       setServerChannels(serverId, channels);
+    });
+
+    socket.on('user:color_updated', ({ userId, color }) => {
+      updateUserColor(userId, color);
     });
 
     return () => {
@@ -224,6 +236,14 @@ export const App: React.FC = () => {
       });
     }
   }, [userVolumes]);
+
+  useEffect(() => {
+    if (voiceManagerRef.current && activeVoiceChannelId) {
+      Object.entries(localMutedUsers).forEach(([userId, isMuted]) => {
+        voiceManagerRef.current?.setLocalMuted(userId, isMuted);
+      });
+    }
+  }, [localMutedUsers, activeVoiceChannelId]);
 
   useEffect(() => {
     if (voiceManagerRef.current) {
@@ -380,7 +400,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#313338] text-[#dbdee1]">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-app-primary text-app-textNormal transition-colors duration-200">
       {/* Native Windows TitleBar */}
       <TitleBar />
 
@@ -398,7 +418,7 @@ export const App: React.FC = () => {
         />
 
         {/* Center Main Stage (Voice Grid + Screen Share + Text Chat) */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#313338]">
+        <div className="flex-1 flex flex-col min-w-0 bg-app-primary">
           {/* Active Voice Stage */}
           <VoiceArea
             onToggleScreenShare={handleToggleScreenShare}
@@ -432,6 +452,9 @@ export const App: React.FC = () => {
 
       {/* Create Server Modal */}
       <CreateServerModal />
+
+      {/* Friend Context Menu (Right-Click) */}
+      <UserContextMenu />
     </div>
   );
 };

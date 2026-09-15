@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 
 // Necessary for Windows 10/11 native toast notifications
-app.setAppUserModelId('com.discordmini.windows');
+app.setAppUserModelId('com.aresenha.app');
 
 interface AppConfig {
   minimizeToTray: boolean;
@@ -49,11 +49,11 @@ function createTray() {
   let icon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
   
   tray = new Tray(icon);
-  tray.setToolTip('Discord Mini');
+  tray.setToolTip('A resenha');
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Mostrar Discord Mini',
+      label: 'Mostrar A resenha',
       click: () => {
         if (mainWindow) {
           mainWindow.show();
@@ -85,13 +85,16 @@ function createTray() {
 }
 
 function createWindow() {
+  const iconPath = path.join(__dirname, '../resources/icon.png');
   mainWindow = new BrowserWindow({
+    title: 'A resenha',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     width: 1280,
     height: 800,
     minWidth: 960,
     minHeight: 600,
     frame: false, // Custom Discord-style titlebar
-    backgroundColor: '#202225',
+    backgroundColor: '#121316',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -119,7 +122,7 @@ function createWindow() {
       mainWindow?.hide();
       if (Notification.isSupported()) {
         new Notification({
-          title: 'Discord Mini',
+          title: 'A resenha',
           body: 'A aplicação continua a correr em segundo plano na barra de tarefas.'
         }).show();
       }

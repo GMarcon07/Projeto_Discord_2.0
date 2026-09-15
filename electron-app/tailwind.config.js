@@ -7,6 +7,20 @@ export default {
   theme: {
     extend: {
       colors: {
+        app: {
+          primary: 'var(--bg-primary)',
+          secondary: 'var(--bg-secondary)',
+          tertiary: 'var(--bg-tertiary)',
+          input: 'var(--bg-input)',
+          hover: 'var(--bg-hover)',
+          card: 'var(--bg-card)',
+          border: 'var(--border-color)',
+          textNormal: 'var(--text-normal)',
+          textMuted: 'var(--text-muted)',
+          textHeader: 'var(--text-header)',
+          accent: 'var(--accent-color)',
+          accentHover: 'var(--accent-hover)'
+        },
         discord: {
           blurple: '#5865F2',
           green: '#57F287',

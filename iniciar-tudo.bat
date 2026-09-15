@@ -1,7 +1,7 @@
 @echo off
-title Discord Mini - Servidor + Desktop
+title A resenha - Servidor + Desktop
 echo ========================================================
-echo   Iniciando Discord Mini Completo (Servidor + Desktop)
+echo   Iniciando A resenha Completo (Servidor + Desktop)
 echo ========================================================
 cd /d "%~dp0"
 

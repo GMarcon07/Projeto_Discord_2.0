@@ -69,6 +69,37 @@ interface AppState {
   setStreamQuality: (quality: StreamQuality) => void;
   setIncludeSystemAudio: (enabled: boolean) => void;
 
+  // Individual Screen Share Volumes: userId -> 0 to 100%
+  screenShareVolumes: Record<string, number>;
+  setScreenShareUserVolume: (userId: string, volume: number) => void;
+
+  // Local Mute: userId -> boolean
+  localMutedUsers: Record<string, boolean>;
+  toggleLocalMuteUser: (userId: string) => void;
+
+  // Channel deletion & User color update
+  removeChannelFromServer: (serverId: string, channelId: string) => void;
+  updateUserColor: (userId: string, color: string) => void;
+
+  // Context Menu
+  contextMenu: {
+    isOpen: boolean;
+    x: number;
+    y: number;
+    targetUser: {
+      id: string;
+      username: string;
+      color?: string;
+      isScreenSharing?: boolean;
+    } | null;
+  };
+  openContextMenu: (
+    x: number,
+    y: number,
+    targetUser: { id: string; username: string; color?: string; isScreenSharing?: boolean }
+  ) => void;
+  closeContextMenu: () => void;
+
   // Appearance & Themes
   theme: ThemeMode;
   setTheme: (theme: ThemeMode) => void;
@@ -108,7 +139,7 @@ interface AppState {
   setCreateServerOpen: (open: boolean) => void;
 }
 
-const savedServerUrl = localStorage.getItem('discord_mini_server_url') || 'http://localhost:3001';
+const savedServerUrl = localStorage.getItem('a_resenha_server_url') || localStorage.getItem('discord_mini_server_url') || 'https://projeto-discord-2-0.onrender.com';
 const savedUser = localStorage.getItem('discord_mini_user');
 const savedTheme = (localStorage.getItem('discord_mini_theme') as ThemeMode) || 'dark';
 const savedInputDev = localStorage.getItem('discord_mini_input_device') || '';
@@ -125,6 +156,7 @@ export const useAppStore = create<AppState>((set) => ({
   currentUser: savedUser ? JSON.parse(savedUser) : null,
   serverUrl: savedServerUrl,
   setServerUrl: (url) => {
+    localStorage.setItem('a_resenha_server_url', url);
     localStorage.setItem('discord_mini_server_url', url);
     set({ serverUrl: url });
   },
@@ -162,6 +194,27 @@ export const useAppStore = create<AppState>((set) => ({
         s.id === serverId ? { ...s, channels } : s
       )
     })),
+  removeChannelFromServer: (serverId, channelId) =>
+    set((state) => ({
+      servers: state.servers.map((s) =>
+        s.id === serverId ? { ...s, channels: s.channels.filter((c) => c.id !== channelId) } : s
+      ),
+      currentChannelId: state.currentChannelId === channelId ? null : state.currentChannelId
+    })),
+  updateUserColor: (userId, color) =>
+    set((state) => {
+      const nextUser = state.currentUser?.id === userId ? { ...state.currentUser, color } : state.currentUser;
+      if (state.currentUser?.id === userId && nextUser) {
+        localStorage.setItem('discord_mini_user', JSON.stringify(nextUser));
+      }
+      return {
+        currentUser: nextUser,
+        members: state.members.map((m) => (m.id === userId ? { ...m, color } : m)),
+        voiceParticipants: state.voiceParticipants.map((p) =>
+          p.userId === userId ? { ...p, color } : p
+        )
+      };
+    }),
 
   messages: {},
   addMessage: (message) =>
@@ -247,6 +300,38 @@ export const useAppStore = create<AppState>((set) => ({
     localStorage.setItem('discord_mini_screen_vol', String(volume));
     set({ screenShareVolume: volume });
   },
+
+  screenShareVolumes: JSON.parse(localStorage.getItem('discord_mini_screen_user_vols') || '{}'),
+  setScreenShareUserVolume: (userId, volume) =>
+    set((state) => {
+      const next = { ...state.screenShareVolumes, [userId]: volume };
+      localStorage.setItem('discord_mini_screen_user_vols', JSON.stringify(next));
+      return { screenShareVolumes: next };
+    }),
+
+  localMutedUsers: {},
+  toggleLocalMuteUser: (userId) =>
+    set((state) => ({
+      localMutedUsers: {
+        ...state.localMutedUsers,
+        [userId]: !state.localMutedUsers[userId]
+      }
+    })),
+
+  contextMenu: {
+    isOpen: false,
+    x: 0,
+    y: 0,
+    targetUser: null
+  },
+  openContextMenu: (x, y, targetUser) =>
+    set({
+      contextMenu: { isOpen: true, x, y, targetUser }
+    }),
+  closeContextMenu: () =>
+    set({
+      contextMenu: { isOpen: false, x: 0, y: 0, targetUser: null }
+    }),
 
   // Stream Quality
   streamQuality: savedStreamQuality,

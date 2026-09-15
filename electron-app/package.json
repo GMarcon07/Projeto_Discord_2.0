@@ -1,8 +1,8 @@
 {
-  "name": "discord-mini-app",
+  "name": "a-resenha",
   "version": "1.0.0",
-  "description": "Discord/Skype simplificado para Windows em Electron",
-  "author": "DiscordMini",
+  "description": "A resenha - Comunicação de Voz, Vídeo e Chat para Windows",
+  "author": "A resenha",
   "main": "dist-electron/main.js",
   "private": true,
   "scripts": {
@@ -38,29 +38,32 @@
   },
   "build": {
     "electronVersion": "34.5.8",
-    "appId": "com.discordmini.windows",
-    "productName": "DiscordMini",
+    "appId": "com.aresenha.app",
+    "productName": "A resenha",
     "directories": {
       "output": "dist-release"
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "resources/**/*",
+      "assets/**/*"
     ],
     "win": {
+      "icon": "assets/icon.png",
       "target": [
         "nsis",
         "portable"
       ],
       "signAndEditExecutable": false,
-      "legalTrademarks": "DiscordMini"
+      "legalTrademarks": "A resenha"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DiscordMini"
+      "shortcutName": "A resenha"
     }
   }
 }
