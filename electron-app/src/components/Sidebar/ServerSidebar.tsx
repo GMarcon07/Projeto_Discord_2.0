@@ -1,9 +1,9 @@
 import React from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { MessageSquare, Compass, Shield } from 'lucide-react';
+import { MessageSquare, Compass, Shield, Plus } from 'lucide-react';
 
 export const ServerSidebar: React.FC = () => {
-  const { servers, currentServerId, setCurrentServerId, setCurrentChannelId } = useAppStore();
+  const { servers, currentServerId, setCurrentServerId, setCurrentChannelId, setCreateServerOpen } = useAppStore();
 
   const handleSelectServer = (serverId: string) => {
     setCurrentServerId(serverId);
@@ -72,6 +72,17 @@ export const ServerSidebar: React.FC = () => {
             </div>
           );
         })}
+
+        {/* Add Server Button */}
+        <div className="relative group flex items-center justify-center w-full mt-1">
+          <button
+            onClick={() => setCreateServerOpen(true)}
+            className="w-12 h-12 rounded-[24px] group-hover:rounded-[16px] transition-all duration-200 flex items-center justify-center bg-[#313338] text-[#23a55a] group-hover:bg-[#23a55a] group-hover:text-white shadow-md"
+            title="Adicionar Servidor"
+          >
+            <Plus size={22} />
+          </button>
+        </div>
       </div>
     </nav>
   );

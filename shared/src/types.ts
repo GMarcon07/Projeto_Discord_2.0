@@ -20,6 +20,7 @@ export interface Channel {
   serverId: string;
   name: string;
   type: ChannelType;
+  orderIndex: number;
   createdAt: string;
 }
 
@@ -41,6 +42,7 @@ export interface VoiceParticipant {
   isDeafened: boolean;
   isSpeaking: boolean;
   isScreenSharing: boolean;
+  pingMs?: number;
 }
 
 export interface ScreenShareSource {
@@ -48,6 +50,24 @@ export interface ScreenShareSource {
   name: string;
   thumbnail: string;
   appIcon?: string;
+}
+
+export type StreamQuality = '720p30' | '1080p30' | '1080p60' | '1440p60';
+
+export type ThemeMode = 'dark' | 'oled' | 'light' | 'navy';
+
+export interface AudioSettings {
+  inputDeviceId: string;
+  outputDeviceId: string;
+  noiseSuppression: boolean;
+  echoCancellation: boolean;
+  sensitivityThreshold: number; // 0.005 to 0.1
+}
+
+export interface ActiveScreenShare {
+  userId: string;
+  username: string;
+  stream: MediaStream;
 }
 
 export const AVATAR_COLORS = [

@@ -3,26 +3,92 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --bg-tertiary: #202225;
-  --bg-secondary: #2f3136;
-  --bg-primary: #36393f;
-  --bg-input: #40444b;
-  --bg-modifier-hover: rgba(79, 84, 92, 0.2);
-  --bg-modifier-active: rgba(79, 84, 92, 0.32);
-  --bg-modifier-selected: rgba(79, 84, 92, 0.4);
+/* Theme 1: Classic Discord Dark (Default) */
+:root, [data-theme="dark"] {
+  --bg-tertiary: #1e1f22;
+  --bg-secondary: #2b2d31;
+  --bg-primary: #313338;
+  --bg-input: #383a40;
+  --border-color: #1f2023;
+  --bg-hover: #35373c;
 
-  --text-normal: #dcddde;
-  --text-muted: #96989d;
+  --text-normal: #dbdee1;
+  --text-muted: #949ba4;
   --text-header: #ffffff;
 
   --blurple: #5865f2;
   --blurple-hover: #4752c4;
-  --green: #3ba55d;
+  --green: #23a55a;
   --green-bright: #57f287;
-  --red: #ed4245;
+  --red: #f23f43;
   --red-hover: #da373c;
-  --yellow: #faa81a;
+  --yellow: #f0b232;
+}
+
+/* Theme 2: Pure OLED Black */
+[data-theme="oled"] {
+  --bg-tertiary: #000000;
+  --bg-secondary: #080808;
+  --bg-primary: #101010;
+  --bg-input: #1a1a1a;
+  --border-color: #222222;
+  --bg-hover: #202020;
+
+  --text-normal: #e0e0e0;
+  --text-muted: #888888;
+  --text-header: #ffffff;
+
+  --blurple: #5865f2;
+  --blurple-hover: #4752c4;
+  --green: #23a55a;
+  --green-bright: #57f287;
+  --red: #f23f43;
+  --red-hover: #da373c;
+  --yellow: #f0b232;
+}
+
+/* Theme 3: Midnight Navy */
+[data-theme="navy"] {
+  --bg-tertiary: #090d16;
+  --bg-secondary: #0f172a;
+  --bg-primary: #1e293b;
+  --bg-input: #334155;
+  --border-color: #1e293b;
+  --bg-hover: #283548;
+
+  --text-normal: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-header: #f8fafc;
+
+  --blurple: #3b82f6;
+  --blurple-hover: #2563eb;
+  --green: #10b981;
+  --green-bright: #34d399;
+  --red: #ef4444;
+  --red-hover: #dc2626;
+  --yellow: #f59e0b;
+}
+
+/* Theme 4: Clean Light Mode */
+[data-theme="light"] {
+  --bg-tertiary: #e3e5e8;
+  --bg-secondary: #f2f3f5;
+  --bg-primary: #ffffff;
+  --bg-input: #ebedef;
+  --border-color: #d1d5db;
+  --bg-hover: #e5e7eb;
+
+  --text-normal: #2e3338;
+  --text-muted: #747f8d;
+  --text-header: #060607;
+
+  --blurple: #5865f2;
+  --blurple-hover: #4752c4;
+  --green: #23a55a;
+  --green-bright: #23a55a;
+  --red: #d83a3e;
+  --red-hover: #ba2f33;
+  --yellow: #d99a1e;
 }
 
 * {
@@ -41,6 +107,7 @@ body {
   overflow: hidden;
   height: 100vh;
   width: 100vw;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 /* Custom Discord Scrollbars */
@@ -49,14 +116,14 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background-color: #2e3338;
+  background-color: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: #202225;
+  background-color: rgba(0, 0, 0, 0.2);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #18191c;
+  background-color: rgba(0, 0, 0, 0.4);
 }
 
 /* Speaking Pulse Effect */

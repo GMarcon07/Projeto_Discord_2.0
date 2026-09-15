@@ -15,6 +15,9 @@ import { VoiceArea } from './components/Voice/VoiceArea';
 import { ScreenPickerModal } from './components/ScreenShare/ScreenPickerModal';
 import { ScreenShareViewer } from './components/ScreenShare/ScreenShareViewer';
 import { MemberList } from './components/MemberList/MemberList';
+import { SettingsModal } from './components/Settings/SettingsModal';
+import { CreateChannelModal } from './components/Modals/CreateChannelModal';
+import { CreateServerModal } from './components/Modals/CreateServerModal';
 
 export const App: React.FC = () => {
   const {
@@ -24,13 +27,17 @@ export const App: React.FC = () => {
     currentServerId,
     currentChannelId,
     setServers,
+    addServer,
     setCurrentServerId,
     setCurrentChannelId,
+    addChannelToServer,
+    setServerChannels,
     addMessage,
     setChannelMessages,
     setMembers,
     activeVoiceChannelId,
     setActiveVoiceChannel,
+    voiceParticipants,
     setVoiceParticipants,
     updateVoiceParticipant,
     removeVoiceParticipant,
@@ -41,14 +48,45 @@ export const App: React.FC = () => {
     setSpeaking,
     isScreenSharing,
     setScreenSharing,
-    setScreenPickerOpen
+    setScreenPickerOpen,
+    setRemoteScreenStreams,
+    setPeerPing,
+    theme,
+    inputDeviceId,
+    outputDeviceId,
+    noiseSuppression,
+    echoCancellation,
+    micSensitivity,
+    setLiveMicVolume,
+    userVolumes,
+    streamQuality,
+    includeSystemAudio,
+    setMinimizeToTray,
+    setDisableGpu
   } = useAppStore();
 
   const socketRef = useRef<Socket | null>(null);
   const voiceManagerRef = useRef<VoiceManager | null>(null);
   const screenShareManagerRef = useRef<ScreenShareManager>(new ScreenShareManager());
 
-  // 1. Initial Load & Fetch Servers
+  // 1. Apply Theme
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  // 2. Load Native Windows / Electron Config
+  useEffect(() => {
+    if (window.electronAPI?.getConfig) {
+      window.electronAPI.getConfig().then((cfg) => {
+        if (cfg) {
+          if (cfg.minimizeToTray !== undefined) setMinimizeToTray(cfg.minimizeToTray);
+          if (cfg.disableGpu !== undefined) setDisableGpu(cfg.disableGpu);
+        }
+      });
+    }
+  }, []);
+
+  // 3. Initial Load & Fetch Servers
   useEffect(() => {
     if (!currentUser) return;
 
@@ -65,7 +103,7 @@ export const App: React.FC = () => {
       .catch((err) => console.error('Erro ao carregar servidores:', err));
   }, [currentUser, serverUrl]);
 
-  // 2. Fetch Channel Messages
+  // 4. Fetch Channel Messages
   useEffect(() => {
     if (!currentChannelId || !currentUser) return;
 
@@ -77,7 +115,7 @@ export const App: React.FC = () => {
       .catch((err) => console.error('Erro ao carregar histórico de mensagens:', err));
   }, [currentChannelId, currentUser, serverUrl]);
 
-  // 3. Socket.io Connection & Event Listeners
+  // 5. Socket.io Connection & Event Listeners
   useEffect(() => {
     if (!currentUser) return;
 
@@ -141,13 +179,59 @@ export const App: React.FC = () => {
       voiceManagerRef.current?.handleSignal(fromUserId, signal);
     });
 
+    // Dynamic Server & Channel Sync
+    socket.on('server:created', ({ server }) => {
+      addServer(server);
+    });
+
+    socket.on('channel:created', ({ channel }) => {
+      addChannelToServer(channel);
+    });
+
+    socket.on('channel:reordered', ({ serverId, channels }) => {
+      setServerChannels(serverId, channels);
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
   }, [currentUser, serverUrl]);
 
-  // 4. Voice Handlers
+  // 6. Reactive Audio & Settings updates while connected to voice
+  useEffect(() => {
+    if (voiceManagerRef.current && activeVoiceChannelId) {
+      voiceManagerRef.current
+        .initLocalMicrophone({
+          deviceId: inputDeviceId,
+          noiseSuppression,
+          echoCancellation
+        })
+        .catch((e) => console.warn('Erro ao atualizar microfone:', e));
+    }
+  }, [inputDeviceId, noiseSuppression, echoCancellation]);
+
+  useEffect(() => {
+    if (voiceManagerRef.current && activeVoiceChannelId) {
+      voiceManagerRef.current.setOutputDevice(outputDeviceId);
+    }
+  }, [outputDeviceId]);
+
+  useEffect(() => {
+    if (voiceManagerRef.current && activeVoiceChannelId) {
+      Object.entries(userVolumes).forEach(([userId, vol]) => {
+        voiceManagerRef.current?.setUserVolume(userId, vol);
+      });
+    }
+  }, [userVolumes]);
+
+  useEffect(() => {
+    if (voiceManagerRef.current) {
+      voiceManagerRef.current.getVad()?.setThreshold(micSensitivity);
+    }
+  }, [micSensitivity]);
+
+  // 7. Voice Handlers
   const handleJoinVoice = async (channelId: string) => {
     if (!currentUser || !socketRef.current) return;
 
@@ -158,8 +242,28 @@ export const App: React.FC = () => {
 
     sounds.playJoinVoice();
 
-    const vm = new VoiceManager(currentUser.id);
+    const vm = new VoiceManager(currentUser.id, micSensitivity);
     voiceManagerRef.current = vm;
+
+    vm.setAudioInputOptions({
+      deviceId: inputDeviceId,
+      noiseSuppression,
+      echoCancellation
+    });
+
+    if (outputDeviceId) {
+      vm.setOutputDevice(outputDeviceId);
+    }
+
+    Object.entries(userVolumes).forEach(([userId, vol]) => {
+      vm.setUserVolume(userId, vol);
+    });
+
+    if (vm.getVad()) {
+      vm.getVad()!.onVolumeSample = (vol) => {
+        setLiveMicVolume(vol);
+      };
+    }
 
     vm.sendSignal = (toUserId, signal) => {
       socketRef.current?.emit('webrtc:signal', { toUserId, signal });
@@ -170,13 +274,12 @@ export const App: React.FC = () => {
       socketRef.current?.emit('voice:state_change', { isSpeaking: speaking });
     };
 
-    vm.onRemoteScreenStream = (remoteUserId, stream) => {
-      if (stream) {
-        const participant = useAppStore.getState().voiceParticipants.find((p) => p.userId === remoteUserId);
-        setScreenSharing(false, stream, participant?.username || 'Amigo');
-      } else {
-        setScreenSharing(false, null, null);
-      }
+    vm.onRemoteScreenStreamsChange = (streamsMap) => {
+      setRemoteScreenStreams(streamsMap);
+    };
+
+    vm.onPingUpdate = (userId, pingMs) => {
+      setPeerPing(userId, pingMs);
     };
 
     setActiveVoiceChannel(channelId);
@@ -194,6 +297,7 @@ export const App: React.FC = () => {
 
     voiceManagerRef.current?.leave();
     voiceManagerRef.current = null;
+    setLiveMicVolume(0);
 
     socketRef.current?.emit('voice:leave');
     setActiveVoiceChannel(null);
@@ -213,7 +317,7 @@ export const App: React.FC = () => {
     socketRef.current?.emit('voice:state_change', { isDeafened: nextDeafen });
   };
 
-  // 5. Screen Share Handlers (1080p 60fps)
+  // 8. Screen Share Handlers (with dynamic quality & loopback audio)
   const handleToggleScreenShare = async () => {
     if (isScreenSharing) {
       handleStopScreenShare();
@@ -237,9 +341,14 @@ export const App: React.FC = () => {
     if (!currentUser) return;
 
     try {
-      const stream = await screenShareManagerRef.current.startCapture(sourceId, () => {
-        handleStopScreenShare();
-      });
+      const stream = await screenShareManagerRef.current.startCapture(
+        sourceId,
+        streamQuality,
+        includeSystemAudio,
+        () => {
+          handleStopScreenShare();
+        }
+      );
 
       if (voiceManagerRef.current) {
         await voiceManagerRef.current.startScreenShare(stream);
@@ -261,7 +370,7 @@ export const App: React.FC = () => {
     socketRef.current?.emit('voice:state_change', { isScreenSharing: false });
   };
 
-  // 6. Chat Handlers
+  // 9. Chat Handlers
   const handleSendMessage = (content: string) => {
     if (!currentChannelId || !socketRef.current) return;
     socketRef.current.emit('chat:send_message', {
@@ -298,7 +407,7 @@ export const App: React.FC = () => {
             onLeaveVoice={handleLeaveVoice}
           />
 
-          {/* 1080p 60fps Screen Share Viewer */}
+          {/* Screen Share Viewer (Multi-screen + Loopback Audio + Ping Overlay) */}
           <ScreenShareViewer onStopShare={handleStopScreenShare} />
 
           {/* Text Chat Feed */}
@@ -314,6 +423,15 @@ export const App: React.FC = () => {
 
       {/* Screen & Window Picker Modal */}
       <ScreenPickerModal onSelectSource={handleSelectScreenSource} />
+
+      {/* Settings Modal */}
+      <SettingsModal />
+
+      {/* Create Channel Modal */}
+      <CreateChannelModal />
+
+      {/* Create Server Modal */}
+      <CreateServerModal />
     </div>
   );
 };

@@ -2,6 +2,7 @@
   "name": "discord-mini-app",
   "version": "1.0.0",
   "description": "Discord/Skype simplificado para Windows em Electron",
+  "author": "DiscordMini",
   "main": "dist-electron/main.js",
   "private": true,
   "scripts": {
@@ -28,7 +29,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
-    "electron": "^34.2.0",
+    "electron": "34.5.8",
     "electron-builder": "^25.1.8",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
@@ -36,6 +37,7 @@
     "vite": "^6.1.0"
   },
   "build": {
+    "electronVersion": "34.5.8",
     "appId": "com.discordmini.windows",
     "productName": "DiscordMini",
     "directories": {
@@ -47,9 +49,10 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        "nsis",
+        "portable"
       ],
-      "icon": "resources/icon.png",
+      "signAndEditExecutable": false,
       "legalTrademarks": "DiscordMini"
     },
     "nsis": {

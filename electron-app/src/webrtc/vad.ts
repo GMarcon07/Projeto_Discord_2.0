@@ -8,8 +8,19 @@ export class VoiceActivityDetector {
   private onSpeakingChange: (isSpeaking: boolean) => void;
   private threshold = 0.02; // Threshold for speaking detection
 
-  constructor(onSpeakingChange: (isSpeaking: boolean) => void) {
+  public onVolumeSample?: (rms: number) => void;
+
+  constructor(onSpeakingChange: (isSpeaking: boolean) => void, threshold = 0.02) {
     this.onSpeakingChange = onSpeakingChange;
+    this.threshold = threshold;
+  }
+
+  setThreshold(newThreshold: number) {
+    this.threshold = Math.max(0.001, Math.min(0.2, newThreshold));
+  }
+
+  getThreshold(): number {
+    return this.threshold;
   }
 
   start(stream: MediaStream) {
@@ -20,7 +31,7 @@ export class VoiceActivityDetector {
       this.audioContext = new AudioCtx();
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 512;
-      this.analyser.smoothingTimeConstant = 0.3;
+      this.analyser.smoothingTimeConstant = 0.2;
 
       this.sourceNode = this.audioContext.createMediaStreamSource(stream);
       this.sourceNode.connect(this.analyser);
@@ -38,6 +49,10 @@ export class VoiceActivityDetector {
           sumSquares += buffer[i] * buffer[i];
         }
         const rms = Math.sqrt(sumSquares / buffer.length);
+
+        if (this.onVolumeSample) {
+          this.onVolumeSample(rms);
+        }
 
         if (rms > this.threshold) {
           if (!this.isSpeaking) {
@@ -90,6 +105,9 @@ export class VoiceActivityDetector {
     if (this.isSpeaking) {
       this.isSpeaking = false;
       this.onSpeakingChange(false);
+    }
+    if (this.onVolumeSample) {
+      this.onVolumeSample(0);
     }
   }
 }

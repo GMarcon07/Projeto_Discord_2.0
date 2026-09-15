@@ -1,10 +1,11 @@
-import { Message, User, VoiceParticipant } from './types';
+import { Message, User, VoiceParticipant, Channel, Server } from './types';
 
 export interface SignalData {
   type: 'offer' | 'answer' | 'ice-candidate' | 'screen-offer' | 'screen-answer' | 'screen-ice-candidate';
   sdp?: any;
   candidate?: any;
   target?: string;
+  hasAudio?: boolean;
 }
 
 export interface ClientToServerEvents {
@@ -17,8 +18,12 @@ export interface ClientToServerEvents {
     isDeafened?: boolean;
     isSpeaking?: boolean;
     isScreenSharing?: boolean;
+    pingMs?: number;
   }) => void;
   'webrtc:signal': (data: { toUserId: string; signal: SignalData }) => void;
+  'channel:create': (data: { serverId: string; name: string; type: 'text' | 'voice' }) => void;
+  'channel:reorder': (data: { serverId: string; channelIds: string[] }) => void;
+  'server:create': (data: { name: string }) => void;
 }
 
 export interface ServerToClientEvents {
@@ -29,4 +34,7 @@ export interface ServerToClientEvents {
   'voice:state_updated': (data: { channelId: string; participant: VoiceParticipant }) => void;
   'voice:room_participants': (data: { channelId: string; participants: VoiceParticipant[] }) => void;
   'webrtc:signal': (data: { fromUserId: string; signal: SignalData }) => void;
+  'channel:created': (data: { channel: Channel }) => void;
+  'channel:reordered': (data: { serverId: string; channels: Channel[] }) => void;
+  'server:created': (data: { server: Server }) => void;
 }

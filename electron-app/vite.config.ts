@@ -11,6 +11,7 @@ export default defineConfig({
     strictPort: true
   },
   resolve: {
+    preserveSymlinks: true,
     alias: {
       '@discord-mini/shared': path.resolve(__dirname, '../shared/src')
     }

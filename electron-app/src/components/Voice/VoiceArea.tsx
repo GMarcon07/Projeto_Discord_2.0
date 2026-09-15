@@ -22,7 +22,9 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
     voiceParticipants,
     isMuted,
     isDeafened,
-    isScreenSharing
+    isScreenSharing,
+    peerPings,
+    currentUser
   } = useAppStore();
 
   if (!activeVoiceChannelId) return null;
@@ -31,7 +33,7 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
   const channel = currentServer?.channels.find((c) => c.id === activeVoiceChannelId);
 
   return (
-    <div className="bg-[#1e1f22] border-b border-[#18191c] p-4 flex flex-col gap-4">
+    <div className="bg-[#1e1f22] border-b border-[#18191c] p-4 flex flex-col gap-4 select-none">
       {/* Voice Channel Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -75,7 +77,7 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
             }`}
             title={isDeafened ? 'Desativar Ensurdecer' : 'Ensurdecer'}
           >
-            <Headphones size={16} />
+            {isDeafened ? <Headphones size={16} /> : <Headphones size={16} />}
           </button>
 
           <button
@@ -90,43 +92,63 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
 
       {/* Participants Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-        {voiceParticipants.map((participant) => (
-          <div
-            key={participant.userId}
-            className={`bg-[#2b2d31] rounded-xl p-3.5 flex flex-col items-center justify-center gap-2 border transition-all relative ${
-              participant.isSpeaking
-                ? 'border-[#23a55a] shadow-[0_0_12px_rgba(35,165,90,0.4)]'
-                : 'border-transparent hover:border-[#3f4147]'
-            }`}
-          >
-            {/* Speaking / Live Badge */}
-            {participant.isScreenSharing && (
-              <span className="absolute top-2 right-2 bg-[#5865F2] text-[9px] font-bold text-white px-1.5 py-0.5 rounded tracking-wider">
-                AO VIVO
-              </span>
-            )}
+        {voiceParticipants.map((participant) => {
+          const isLocal = participant.userId === currentUser?.id;
+          const pingMs = !isLocal ? peerPings[participant.userId] : undefined;
 
-            {/* Avatar with speaking ring */}
+          return (
             <div
-              className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white shadow-md transition-transform ${
-                participant.isSpeaking ? 'scale-105 speaking-ring' : ''
+              key={participant.userId}
+              className={`bg-[#2b2d31] rounded-xl p-3.5 flex flex-col items-center justify-center gap-2 border transition-all relative ${
+                participant.isSpeaking
+                  ? 'border-[#23a55a] shadow-[0_0_12px_rgba(35,165,90,0.4)]'
+                  : 'border-transparent hover:border-[#3f4147]'
               }`}
-              style={{ backgroundColor: participant.color }}
             >
-              {participant.username[0]?.toUpperCase()}
-            </div>
-
-            {/* Username & Audio status */}
-            <div className="flex items-center gap-1.5 max-w-full">
-              <span className="text-xs font-semibold text-[#dbdee1] truncate">
-                {participant.username}
-              </span>
-              {participant.isMuted && (
-                <MicOff size={12} className="text-[#f23f43] shrink-0" />
+              {/* WebRTC Ping Badge */}
+              {pingMs !== undefined && (
+                <div
+                  className="absolute top-2 left-2 flex items-center gap-1 bg-black/50 backdrop-blur-sm px-1.5 py-0.5 rounded text-[10px] font-mono text-white/90"
+                  title={`Ping WebRTC: ${pingMs} ms`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      pingMs < 60 ? 'bg-[#23a55a]' : pingMs < 130 ? 'bg-[#f0b232]' : 'bg-[#f23f43]'
+                    }`}
+                  />
+                  <span>{pingMs}ms</span>
+                </div>
               )}
+
+              {/* Speaking / Live Badge */}
+              {participant.isScreenSharing && (
+                <span className="absolute top-2 right-2 bg-[#5865F2] text-[9px] font-bold text-white px-1.5 py-0.5 rounded tracking-wider">
+                  AO VIVO
+                </span>
+              )}
+
+              {/* Avatar with speaking ring */}
+              <div
+                className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white shadow-md transition-transform ${
+                  participant.isSpeaking ? 'scale-105 speaking-ring' : ''
+                }`}
+                style={{ backgroundColor: participant.color }}
+              >
+                {participant.username[0]?.toUpperCase()}
+              </div>
+
+              {/* Username & Audio status */}
+              <div className="flex items-center gap-1.5 max-w-full">
+                <span className="text-xs font-semibold text-[#dbdee1] truncate">
+                  {participant.username}
+                </span>
+                {participant.isMuted && (
+                  <MicOff size={12} className="text-[#f23f43] shrink-0" />
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

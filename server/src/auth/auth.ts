@@ -75,3 +75,26 @@ export function getAllUsers(onlineUserIds: Set<string>): User[] {
     createdAt: r.created_at
   }));
 }
+
+export function changePin(userId: string, currentPin: string, newPin: string): { success: boolean; message: string } {
+  const user = db.prepare('SELECT id, pin_hash FROM users WHERE id = ?').get(userId) as any;
+  if (!user) {
+    return { success: false, message: 'Utilizador não encontrado.' };
+  }
+
+  const isCurrentPinValid = bcrypt.compareSync(currentPin.trim(), user.pin_hash);
+  if (!isCurrentPinValid) {
+    return { success: false, message: 'O PIN atual está incorreto.' };
+  }
+
+  const cleanNewPin = newPin.trim();
+  if (!/^\d{4,6}$/.test(cleanNewPin)) {
+    return { success: false, message: 'O novo PIN deve conter entre 4 e 6 dígitos numéricos.' };
+  }
+
+  const newHash = bcrypt.hashSync(cleanNewPin, 10);
+  db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(newHash, userId);
+
+  return { success: true, message: 'PIN alterado com sucesso!' };
+}
+

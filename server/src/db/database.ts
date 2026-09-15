@@ -41,10 +41,18 @@ export function initDatabase() {
       server_id TEXT NOT NULL,
       name TEXT NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('text', 'voice')),
+      order_index INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
     );
   `);
+
+  // Migration: ensure order_index column exists on existing databases
+  try {
+    db.exec('ALTER TABLE channels ADD COLUMN order_index INTEGER DEFAULT 0');
+  } catch {
+    // Column already exists
+  }
 
   // 4. Messages table (7-day retention)
   db.exec(`
@@ -73,14 +81,14 @@ export function initDatabase() {
     const defaultServerId = 'default-server';
     db.prepare('INSERT INTO servers (id, name) VALUES (?, ?)').run(defaultServerId, 'Comunidade dos Amigos');
 
-    const insertChannel = db.prepare('INSERT INTO channels (id, server_id, name, type) VALUES (?, ?, ?, ?)');
+    const insertChannel = db.prepare('INSERT INTO channels (id, server_id, name, type, order_index) VALUES (?, ?, ?, ?, ?)');
     // Text channels
-    insertChannel.run('chan-geral', defaultServerId, 'geral', 'text');
-    insertChannel.run('chan-jogos', defaultServerId, 'jogos', 'text');
-    insertChannel.run('chan-memes', defaultServerId, 'memes', 'text');
+    insertChannel.run('chan-geral', defaultServerId, 'geral', 'text', 0);
+    insertChannel.run('chan-jogos', defaultServerId, 'jogos', 'text', 1);
+    insertChannel.run('chan-memes', defaultServerId, 'memes', 'text', 2);
     // Voice channels
-    insertChannel.run('voice-geral', defaultServerId, 'Conversa Geral', 'voice');
-    insertChannel.run('voice-jogos', defaultServerId, 'Sala de Jogos', 'voice');
+    insertChannel.run('voice-geral', defaultServerId, 'Conversa Geral', 'voice', 3);
+    insertChannel.run('voice-jogos', defaultServerId, 'Sala de Jogos', 'voice', 4);
 
     console.log('[DB] Base de dados inicializada com servidor e canais padrão.');
   } else {

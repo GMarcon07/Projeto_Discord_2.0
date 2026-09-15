@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import {
   Hash,
@@ -9,8 +9,12 @@ import {
   PhoneOff,
   Radio,
   LogOut,
-  ChevronDown
+  ChevronDown,
+  Plus,
+  Settings,
+  GripVertical
 } from 'lucide-react';
+import { Channel } from '@discord-mini/shared';
 
 interface ChannelSidebarProps {
   onJoinVoice: (channelId: string) => void;
@@ -35,18 +39,67 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
     activeVoiceChannelId,
     voiceParticipants,
     isMuted,
-    isDeafened
+    isDeafened,
+    serverUrl,
+    setServerChannels,
+    setSettingsOpen,
+    setCreateChannelOpen
   } = useAppStore();
 
+  const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
+
   const currentServer = servers.find((s) => s.id === currentServerId) || servers[0];
-  const textChannels = currentServer?.channels.filter((c) => c.type === 'text') || [];
-  const voiceChannels = currentServer?.channels.filter((c) => c.type === 'voice') || [];
+  const allChannels = currentServer?.channels || [];
+  const textChannels = allChannels.filter((c) => c.type === 'text');
+  const voiceChannels = allChannels.filter((c) => c.type === 'voice');
 
   const activeVoiceChannel = voiceChannels.find((c) => c.id === activeVoiceChannelId);
 
   const handleLogout = () => {
     onLeaveVoice();
     setCurrentUser(null);
+  };
+
+  // Drag & Drop Reordering
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData('text/plain', id);
+    setDraggedChannelId(id);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = draggedChannelId;
+    setDraggedChannelId(null);
+    if (!sourceId || sourceId === targetId || !currentServer) return;
+
+    const sourceChan = allChannels.find((c) => c.id === sourceId);
+    const targetChan = allChannels.find((c) => c.id === targetId);
+    if (!sourceChan || !targetChan || sourceChan.type !== targetChan.type) return;
+
+    // Reorder array
+    const filtered = allChannels.filter((c) => c.id !== sourceId);
+    const targetIdx = filtered.findIndex((c) => c.id === targetId);
+    filtered.splice(targetIdx, 0, sourceChan);
+
+    setServerChannels(currentServer.id, filtered);
+
+    // Save to server
+    try {
+      await fetch(`${serverUrl}/api/channels/reorder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serverId: currentServer.id,
+          channelIds: filtered.map((c) => c.id)
+        })
+      });
+    } catch (err) {
+      console.error('Erro ao reordenar canais no servidor:', err);
+    }
   };
 
   return (
@@ -61,25 +114,41 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
       <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
         {/* Text Channels */}
         <div>
-          <div className="px-2 mb-1 text-[11px] font-bold uppercase tracking-wider text-[#949ba4] flex items-center justify-between">
+          <div className="px-2 mb-1 text-[11px] font-bold uppercase tracking-wider text-[#949ba4] flex items-center justify-between group">
             <span>Canais de Texto</span>
+            <button
+              onClick={() => setCreateChannelOpen(true, 'text')}
+              className="opacity-60 hover:opacity-100 hover:text-white p-0.5 rounded transition-opacity"
+              title="Criar Canal de Texto"
+            >
+              <Plus size={15} />
+            </button>
           </div>
           <div className="space-y-0.5">
             {textChannels.map((channel) => {
               const isSelected = currentChannelId === channel.id;
               return (
-                <button
+                <div
                   key={channel.id}
-                  onClick={() => setCurrentChannelId(channel.id)}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    isSelected
-                      ? 'bg-[#404249] text-white'
-                      : 'text-[#949ba4] hover:bg-[#35373c] hover:text-[#dbdee1]'
-                  }`}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, channel.id)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, channel.id)}
+                  className="group relative"
                 >
-                  <Hash size={18} className="shrink-0 text-[#80848e]" />
-                  <span className="truncate">{channel.name}</span>
-                </button>
+                  <button
+                    onClick={() => setCurrentChannelId(channel.id)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      isSelected
+                        ? 'bg-[#404249] text-white'
+                        : 'text-[#949ba4] hover:bg-[#35373c] hover:text-[#dbdee1]'
+                    }`}
+                  >
+                    <GripVertical size={12} className="opacity-0 group-hover:opacity-40 -ml-1 shrink-0 cursor-grab" />
+                    <Hash size={18} className="shrink-0 text-[#80848e]" />
+                    <span className="truncate">{channel.name}</span>
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -87,14 +156,28 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
 
         {/* Voice Channels */}
         <div>
-          <div className="px-2 mb-1 text-[11px] font-bold uppercase tracking-wider text-[#949ba4] flex items-center justify-between">
+          <div className="px-2 mb-1 text-[11px] font-bold uppercase tracking-wider text-[#949ba4] flex items-center justify-between group">
             <span>Canais de Voz</span>
+            <button
+              onClick={() => setCreateChannelOpen(true, 'voice')}
+              className="opacity-60 hover:opacity-100 hover:text-white p-0.5 rounded transition-opacity"
+              title="Criar Canal de Voz"
+            >
+              <Plus size={15} />
+            </button>
           </div>
           <div className="space-y-1">
             {voiceChannels.map((channel) => {
               const isConnected = activeVoiceChannelId === channel.id;
               return (
-                <div key={channel.id} className="space-y-0.5">
+                <div
+                  key={channel.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, channel.id)}
+                  onDragOver={handleDragOver}
+                  onDrop={(e) => handleDrop(e, channel.id)}
+                  className="space-y-0.5 group"
+                >
                   <button
                     onClick={() => {
                       if (!isConnected) {
@@ -108,6 +191,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                     }`}
                   >
                     <div className="flex items-center gap-2 truncate">
+                      <GripVertical size={12} className="opacity-0 group-hover:opacity-40 -ml-1 shrink-0 cursor-grab" />
                       <Volume2 size={18} className={`shrink-0 ${isConnected ? 'text-[#23a55a]' : 'text-[#80848e]'}`} />
                       <span className="truncate">{channel.name}</span>
                     </div>
@@ -178,11 +262,15 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
         </div>
       )}
 
-      {/* User Bar */}
+      {/* User Bar with Settings Button */}
       {currentUser && (
         <div className="h-[52px] bg-[#232428] px-2 flex items-center justify-between border-t border-[#1f2023]">
           {/* User info */}
-          <div className="flex items-center gap-2 min-w-0 pr-1">
+          <div
+            onClick={() => setSettingsOpen(true)}
+            className="flex items-center gap-2 min-w-0 pr-1 cursor-pointer hover:opacity-90 rounded p-1 -ml-1 transition-opacity"
+            title="Definições de Utilizador"
+          >
             <div className="relative">
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white shadow"
@@ -219,6 +307,13 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
               title={isDeafened ? 'Ativar som' : 'Ensurdecer'}
             >
               <Headphones size={16} />
+            </button>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="p-1.5 rounded hover:bg-[#35373c] hover:text-white transition-colors"
+              title="Definições"
+            >
+              <Settings size={16} />
             </button>
             <button
               onClick={handleLogout}

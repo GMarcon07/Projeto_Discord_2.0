@@ -1,35 +1,73 @@
+import { StreamQuality } from '@discord-mini/shared';
+
+export interface QualityConfig {
+  width: number;
+  height: number;
+  frameRate: number;
+  bitrate: number; // bps
+}
+
+export const QUALITY_PRESETS: Record<StreamQuality, QualityConfig> = {
+  '720p30': { width: 1280, height: 720, frameRate: 30, bitrate: 3_000_000 },
+  '1080p30': { width: 1920, height: 1080, frameRate: 30, bitrate: 6_000_000 },
+  '1080p60': { width: 1920, height: 1080, frameRate: 60, bitrate: 10_000_000 },
+  '1440p60': { width: 2560, height: 1440, frameRate: 60, bitrate: 15_000_000 }
+};
+
 export class ScreenShareManager {
   private screenStream: MediaStream | null = null;
   private onStopCallback: (() => void) | null = null;
+  private currentQuality: StreamQuality = '1080p60';
 
-  async startCapture(sourceId: string, onStop?: () => void): Promise<MediaStream> {
+  async startCapture(
+    sourceId: string,
+    quality: StreamQuality = '1080p60',
+    includeSystemAudio = true,
+    onStop?: () => void
+  ): Promise<MediaStream> {
     this.stopCapture();
     this.onStopCallback = onStop || null;
+    this.currentQuality = quality;
+
+    const q = QUALITY_PRESETS[quality] || QUALITY_PRESETS['1080p60'];
 
     try {
-      // 1080p @ 60fps desktopCapturer constraints
       const constraints: any = {
-        audio: false,
+        audio: includeSystemAudio
+          ? {
+              mandatory: {
+                chromeMediaSource: 'desktop'
+              }
+            }
+          : false,
         video: {
           mandatory: {
             chromeMediaSource: 'desktop',
             chromeMediaSourceId: sourceId,
-            minWidth: 1920,
-            maxWidth: 1920,
-            minHeight: 1080,
-            maxHeight: 1080,
-            minFrameRate: 60,
-            maxFrameRate: 60
+            minWidth: q.width,
+            maxWidth: q.width,
+            minHeight: q.height,
+            maxHeight: q.height,
+            minFrameRate: Math.min(30, q.frameRate),
+            maxFrameRate: q.frameRate
           }
         }
       };
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (audioErr) {
+        // If system audio capture fails, fallback to video only
+        console.warn('[SCREEN-SHARE] Falha ao capturar áudio do sistema, tentando apenas vídeo:', audioErr);
+        constraints.audio = false;
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      }
+
       this.screenStream = stream;
 
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack) {
-        // High quality content hint for screenshare (maintains text sharpness)
         if ('contentHint' in videoTrack) {
           (videoTrack as any).contentHint = 'detail';
         }
@@ -61,10 +99,16 @@ export class ScreenShareManager {
     return this.screenStream;
   }
 
-  /**
-   * Prioritizes VP9/AV1 codecs on a video transceiver and sets high bitrate (10 Mbps)
-   */
-  static async configureHighQualityVideoSender(sender: RTCRtpSender, transceiver?: RTCRtpTransceiver) {
+  getCurrentQuality(): StreamQuality {
+    return this.currentQuality;
+  }
+
+  static async configureHighQualityVideoSender(
+    sender: RTCRtpSender,
+    transceiver?: RTCRtpTransceiver,
+    quality: StreamQuality = '1080p60'
+  ) {
+    const q = QUALITY_PRESETS[quality] || QUALITY_PRESETS['1080p60'];
     try {
       // 1. Codec preference (VP9 and AV1 prioritized)
       if (transceiver && 'setCodecPreferences' in transceiver && typeof RTCRtpReceiver.getCapabilities === 'function') {
@@ -81,23 +125,20 @@ export class ScreenShareManager {
         }
       }
 
-      // 2. High Bitrate (10 Mbps for 1080p 60fps)
+      // 2. High Bitrate & framerate based on quality preset
       const params = sender.getParameters();
       if (!params.encodings || params.encodings.length === 0) {
         params.encodings = [{}];
       }
-      params.encodings[0].maxBitrate = 10_000_000; // 10 Mbps
-      params.encodings[0].maxFramerate = 60;
+      params.encodings[0].maxBitrate = q.bitrate;
+      params.encodings[0].maxFramerate = q.frameRate;
       await sender.setParameters(params);
-      console.log('[SCREEN-SHARE] Transceiver configurado com 10Mbps e prioridade VP9/AV1.');
+      console.log(`[SCREEN-SHARE] Configurado para ${quality} (${q.width}x${q.height} @ ${q.frameRate}fps, ${q.bitrate / 1_000_000} Mbps)`);
     } catch (e) {
       console.warn('[SCREEN-SHARE] Não foi possível aplicar setParameters no sender:', e);
     }
   }
 
-  /**
-   * SDP munging fallback to guarantee high video bitrate (10 Mbps) on older/strict WebRTC implementations
-   */
   static applyHighBitrateSdp(sdp: string, bitrateKbps = 10000): string {
     const lines = sdp.split('\r\n');
     let mVideoFound = false;
@@ -109,7 +150,6 @@ export class ScreenShareManager {
 
       if (line.startsWith('m=video')) {
         mVideoFound = true;
-        // Inject bitrate after m=video line
         modifiedLines.push(`b=AS:${bitrateKbps}`);
         modifiedLines.push(`b=TIAS:${bitrateKbps * 1000}`);
       } else if (mVideoFound && line.startsWith('m=')) {

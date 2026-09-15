@@ -1,10 +1,88 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, Notification, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, desktopCapturer, Notification, shell, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
+import fs from 'fs';
 
 // Necessary for Windows 10/11 native toast notifications
 app.setAppUserModelId('com.discordmini.windows');
 
+interface AppConfig {
+  minimizeToTray: boolean;
+  disableGpu: boolean;
+}
+
+const configPath = path.join(app.getPath('userData'), 'user-config.json');
+
+function loadConfig(): AppConfig {
+  try {
+    if (fs.existsSync(configPath)) {
+      return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Erro ao ler config:', e);
+  }
+  return { minimizeToTray: false, disableGpu: false };
+}
+
+function saveConfig(cfg: AppConfig) {
+  try {
+    fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Erro ao gravar config:', e);
+  }
+}
+
+let appConfig = loadConfig();
+
+// Disable hardware acceleration if configured by user
+if (appConfig.disableGpu) {
+  app.disableHardwareAcceleration();
+}
+
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
+
+function createTray() {
+  if (tray) return;
+
+  const iconPath = path.join(__dirname, '../resources/icon.png');
+  let icon = fs.existsSync(iconPath) ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
+  
+  tray = new Tray(icon);
+  tray.setToolTip('Discord Mini');
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Mostrar Discord Mini',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Sair',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
+    }
+  ]);
+
+  tray.setContextMenu(contextMenu);
+
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.focus();
+      } else {
+        mainWindow.show();
+      }
+    }
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -31,11 +109,22 @@ function createWindow() {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
   if (!app.isPackaged) {
     mainWindow.loadURL(devServerUrl);
-    // Open DevTools in dev mode
-    // mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  mainWindow.on('close', (event) => {
+    if (!isQuitting && appConfig.minimizeToTray) {
+      event.preventDefault();
+      mainWindow?.hide();
+      if (Notification.isSupported()) {
+        new Notification({
+          title: 'Discord Mini',
+          body: 'A aplicação continua a correr em segundo plano na barra de tarefas.'
+        }).show();
+      }
+    }
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -43,6 +132,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  createTray();
   createWindow();
 
   app.on('activate', () => {
@@ -52,8 +142,12 @@ app.whenReady().then(() => {
   });
 });
 
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && (!appConfig.minimizeToTray || isQuitting)) {
     app.quit();
   }
 });
@@ -62,7 +156,7 @@ app.on('window-all-closed', () => {
 // IPC Handlers
 // -------------------------------------------------------------
 
-// 1. Desktop Capturer (Screen & Window Sources for 1080p 60fps streaming)
+// 1. Desktop Capturer (Screen & Window Sources for streaming)
 ipcMain.handle('desktop-capturer:get-sources', async () => {
   try {
     const sources = await desktopCapturer.getSources({
@@ -125,4 +219,21 @@ ipcMain.on('window:close', () => {
 
 ipcMain.handle('window:is-maximized', () => {
   return mainWindow ? mainWindow.isMaximized() : false;
+});
+
+// 4. System Settings (Tray, GPU)
+ipcMain.handle('config:get', () => {
+  return appConfig;
+});
+
+ipcMain.handle('config:set', (_, partial: Partial<AppConfig>) => {
+  appConfig = { ...appConfig, ...partial };
+  saveConfig(appConfig);
+  return appConfig;
+});
+
+ipcMain.on('app:restart', () => {
+  isQuitting = true;
+  app.relaunch();
+  app.exit(0);
 });

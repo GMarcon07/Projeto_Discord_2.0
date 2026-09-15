@@ -9,6 +9,9 @@ export interface ElectronAPI {
   maximizeWindow: () => void;
   closeWindow: () => void;
   isWindowMaximized: () => Promise<boolean>;
+  getConfig: () => Promise<{ minimizeToTray: boolean; disableGpu: boolean }>;
+  setConfig: (config: Partial<{ minimizeToTray: boolean; disableGpu: boolean }>) => Promise<any>;
+  restartApp: () => void;
 }
 
 const electronAPI: ElectronAPI = {
@@ -31,6 +34,15 @@ const electronAPI: ElectronAPI = {
   },
   isWindowMaximized: async () => {
     return await ipcRenderer.invoke('window:is-maximized');
+  },
+  getConfig: async () => {
+    return await ipcRenderer.invoke('config:get');
+  },
+  setConfig: async (config) => {
+    return await ipcRenderer.invoke('config:set', config);
+  },
+  restartApp: () => {
+    ipcRenderer.send('app:restart');
   }
 };
 

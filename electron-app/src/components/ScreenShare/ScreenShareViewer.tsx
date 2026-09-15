@@ -1,25 +1,86 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { Maximize2, Minimize2, Radio, StopCircle } from 'lucide-react';
+import { Maximize2, Minimize2, Radio, StopCircle, Volume2, Monitor } from 'lucide-react';
 
 interface ScreenShareViewerProps {
   onStopShare: () => void;
 }
 
 export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShare }) => {
-  const { screenShareStream, screenSharerName, isScreenSharing } = useAppStore();
+  const {
+    screenShareStream,
+    isScreenSharing,
+    remoteScreenStreams,
+    activeViewingScreenUserId,
+    setActiveViewingScreenUserId,
+    voiceParticipants,
+    currentUser,
+    screenShareVolume,
+    setScreenShareVolume,
+    peerPings,
+    streamQuality
+  } = useAppStore();
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Build the list of all available streams
+  const streamEntries: Array<{
+    id: string;
+    stream: MediaStream;
+    name: string;
+    isLocal: boolean;
+  }> = [];
+
+  // Local stream
+  if (isScreenSharing && screenShareStream) {
+    streamEntries.push({
+      id: 'local',
+      stream: screenShareStream,
+      name: `${currentUser?.username || 'Você'} (Ecrã)`,
+      isLocal: true
+    });
+  }
+
+  // Remote streams
+  Object.entries(remoteScreenStreams).forEach(([userId, stream]) => {
+    const participant = voiceParticipants.find((p) => p.userId === userId);
+    streamEntries.push({
+      id: userId,
+      stream,
+      name: participant ? `${participant.username} (Ecrã)` : 'Ecrã Remoto',
+      isLocal: false
+    });
+  });
+
+  // Select active stream
+  const activeEntry =
+    streamEntries.find((e) => e.id === activeViewingScreenUserId) ||
+    streamEntries[0] ||
+    null;
+
+  // Sync active stream with <video> element
   useEffect(() => {
-    if (videoRef.current && screenShareStream) {
-      videoRef.current.srcObject = screenShareStream;
+    if (videoRef.current && activeEntry) {
+      videoRef.current.srcObject = activeEntry.stream;
       videoRef.current.play().catch((e) => console.warn('Erro autoplay video:', e));
     }
-  }, [screenShareStream]);
+  }, [activeEntry?.stream, activeEntry?.id]);
 
-  if (!screenShareStream) return null;
+  // Adjust volume for remote screen audio
+  useEffect(() => {
+    if (videoRef.current && activeEntry) {
+      if (activeEntry.isLocal) {
+        videoRef.current.muted = true;
+      } else {
+        videoRef.current.muted = false;
+        videoRef.current.volume = Math.max(0, Math.min(1, screenShareVolume / 100));
+      }
+    }
+  }, [screenShareVolume, activeEntry?.isLocal]);
+
+  if (!activeEntry) return null;
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -32,41 +93,104 @@ export const ScreenShareViewer: React.FC<ScreenShareViewerProps> = ({ onStopShar
     }
   };
 
+  const pingMs = !activeEntry.isLocal ? peerPings[activeEntry.id] : undefined;
+
   return (
     <div
       ref={containerRef}
-      className="relative bg-black border-b border-[#1f2023] w-full flex items-center justify-center overflow-hidden max-h-[60vh] aspect-video group"
+      className="relative bg-black border-b border-[#1f2023] w-full flex flex-col items-center justify-center overflow-hidden max-h-[60vh] aspect-video group select-none"
     >
+      {/* Stream Tabs if multiple streams exist */}
+      {streamEntries.length > 1 && (
+        <div className="absolute top-3 left-3 z-30 flex items-center gap-1.5 bg-black/70 backdrop-blur-md p-1 rounded-lg border border-white/10">
+          {streamEntries.map((entry) => {
+            const isSelected = entry.id === activeEntry.id;
+            return (
+              <button
+                key={entry.id}
+                onClick={() => setActiveViewingScreenUserId(entry.id)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                  isSelected
+                    ? 'bg-[#5865F2] text-white shadow'
+                    : 'text-[#949ba4] hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Monitor size={12} />
+                <span className="truncate max-w-[120px]">{entry.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <video
         ref={videoRef}
         autoPlay
         playsInline
-        muted
+        muted={activeEntry.isLocal}
         className="w-full h-full object-contain"
       />
 
-      {/* Overlay controls */}
-      <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-semibold text-white">
-        <Radio size={14} className="text-[#f23f43] animate-pulse" />
-        <span>{screenSharerName || 'Transmissão de Ecrã'}</span>
-        <span className="bg-[#23a55a] text-[10px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
-          1080p 60fps
-        </span>
-      </div>
+      {/* Info Badge (when only 1 stream is present) */}
+      {streamEntries.length === 1 && (
+        <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg text-xs font-semibold text-white z-20">
+          <Radio size={14} className="text-[#f23f43] animate-pulse" />
+          <span>{activeEntry.name}</span>
+          <span className="bg-[#23a55a] text-[10px] px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
+            {streamQuality || '1080p 60fps'}
+          </span>
+        </div>
+      )}
 
-      <div className="absolute top-3 right-3 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Controls Overlay (top right) */}
+      <div className="absolute top-3 right-3 flex items-center gap-2 z-20">
+        {/* Ping MS Badge (for remote streams) */}
+        {pingMs !== undefined && (
+          <div
+            className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-medium text-white border border-white/5"
+            title={`Latência RTT estimada: ${pingMs} ms`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                pingMs < 60 ? 'bg-[#23a55a]' : pingMs < 130 ? 'bg-[#f0b232]' : 'bg-[#f23f43]'
+              }`}
+            />
+            <span>{pingMs}ms</span>
+          </div>
+        )}
+
+        {/* Remote Screen Audio Volume Slider */}
+        {!activeEntry.isLocal && (
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs text-white border border-white/5">
+            <Volume2 size={13} className="text-[#949ba4]" />
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={screenShareVolume}
+              onChange={(e) => setScreenShareVolume(Number(e.target.value))}
+              className="w-16 h-1 bg-[#4e5058] rounded-lg appearance-none cursor-pointer accent-[#5865F2]"
+              title={`Volume do áudio partilhado: ${screenShareVolume}%`}
+            />
+            <span className="text-[10px] w-6 text-right font-mono">{screenShareVolume}%</span>
+          </div>
+        )}
+
+        {/* Stop Local Share Button */}
         {isScreenSharing && (
           <button
             onClick={onStopShare}
-            className="flex items-center gap-1.5 bg-[#da373c] hover:bg-[#a1282c] text-white px-3 py-1.5 rounded text-xs font-semibold shadow transition-colors"
+            className="flex items-center gap-1.5 bg-[#da373c] hover:bg-[#a1282c] text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition-colors"
           >
             <StopCircle size={14} />
             Parar Transmissão
           </button>
         )}
+
+        {/* Fullscreen Button */}
         <button
           onClick={toggleFullscreen}
-          className="bg-black/60 hover:bg-black/80 text-white p-2 rounded backdrop-blur-md transition-colors"
+          className="bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg backdrop-blur-md transition-colors"
           title={isFullscreen ? 'Sair de ecrã inteiro' : 'Ecrã inteiro'}
         >
           {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
