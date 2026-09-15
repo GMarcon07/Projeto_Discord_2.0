@@ -12,6 +12,11 @@ export interface ElectronAPI {
   getConfig: () => Promise<{ minimizeToTray: boolean; disableGpu: boolean }>;
   setConfig: (config: Partial<{ minimizeToTray: boolean; disableGpu: boolean }>) => Promise<any>;
   restartApp: () => void;
+  getNetworkIps: () => Promise<Array<{ name: string; address: string; family: string }>>;
+  openFolder: (path: string) => Promise<string>;
+  checkServerHealth: (url: string) => Promise<{ ok: boolean; data?: any; error?: string }>;
+  controlLocalServer: (action: 'start' | 'stop' | 'restart', port?: number) => Promise<{ success: boolean; message?: string }>;
+  backupDatabase: () => Promise<{ success: boolean; backupPath?: string; error?: string }>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -43,6 +48,21 @@ const electronAPI: ElectronAPI = {
   },
   restartApp: () => {
     ipcRenderer.send('app:restart');
+  },
+  getNetworkIps: async () => {
+    return await ipcRenderer.invoke('server:get-network-ips');
+  },
+  openFolder: async (path: string) => {
+    return await ipcRenderer.invoke('server:open-folder', path);
+  },
+  checkServerHealth: async (url: string) => {
+    return await ipcRenderer.invoke('server:check-health', url);
+  },
+  controlLocalServer: async (action: 'start' | 'stop' | 'restart', port?: number) => {
+    return await ipcRenderer.invoke('server:control', action, port);
+  },
+  backupDatabase: async () => {
+    return await ipcRenderer.invoke('server:backup-db');
   }
 };
 

@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain, desktopCapturer, Notification, shell, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
+import { spawn, execSync } from 'child_process';
 
 // Necessary for Windows 10/11 native toast notifications
 app.setAppUserModelId('com.aresenha.app');
@@ -239,4 +241,132 @@ ipcMain.on('app:restart', () => {
   isQuitting = true;
   app.relaunch();
   app.exit(0);
+});
+
+// -------------------------------------------------------------
+// 5. Local Server Management IPC
+// -------------------------------------------------------------
+
+// Get Local IPv4 network addresses (for LAN friends)
+ipcMain.handle('server:get-network-ips', () => {
+  const interfaces = os.networkInterfaces();
+  const ips: Array<{ name: string; address: string; family: string }> = [];
+  for (const [name, netList] of Object.entries(interfaces)) {
+    if (!netList) continue;
+    for (const net of netList) {
+      if (net.family === 'IPv4' && !net.internal) {
+        ips.push({ name, address: net.address, family: net.family });
+      }
+    }
+  }
+  return ips;
+});
+
+// Open folder in Windows Explorer
+ipcMain.handle('server:open-folder', async (_, folderPath: string) => {
+  const repoRoot = app.isPackaged
+    ? path.dirname(app.getPath('exe'))
+    : path.resolve(__dirname, '../..');
+
+  let target = folderPath;
+  if (!path.isAbsolute(target)) {
+    target = path.join(repoRoot, folderPath);
+  }
+  if (!fs.existsSync(target)) {
+    fs.mkdirSync(target, { recursive: true });
+  }
+  await shell.openPath(target);
+  return target;
+});
+
+// Check if a server is online and responding to /health
+ipcMain.handle('server:check-health', async (_, url: string) => {
+  try {
+    const cleanUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+    const res = await fetch(`${cleanUrl}/health`, { signal: AbortSignal.timeout(2500) });
+    const data = await res.json();
+    return { ok: res.ok, data };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// Control local server process (Start, Stop, Restart)
+let localServerChild: any = null;
+
+ipcMain.handle('server:control', async (_, action: 'start' | 'stop' | 'restart', port = 3001) => {
+  const repoRoot = app.isPackaged
+    ? path.dirname(app.getPath('exe'))
+    : path.resolve(__dirname, '../..');
+  const serverDist = path.join(repoRoot, 'server', 'dist', 'index.js');
+
+  const killPort = () => {
+    try {
+      if (process.platform === 'win32') {
+        execSync(`for /f "tokens=5" %a in ('netstat -aon ^| findstr :${port} ') do taskkill /F /PID %a >nul 2>&1`, { shell: 'cmd.exe' });
+      }
+    } catch {}
+  };
+
+  if (action === 'stop') {
+    killPort();
+    if (localServerChild) {
+      try { localServerChild.kill(); } catch {}
+      localServerChild = null;
+    }
+    return { success: true, message: 'Servidor local encerrado.' };
+  }
+
+  if (action === 'restart') {
+    killPort();
+    if (localServerChild) {
+      try { localServerChild.kill(); } catch {}
+      localServerChild = null;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 600));
+  }
+
+  if (action === 'start' || action === 'restart') {
+    killPort();
+
+    if (fs.existsSync(serverDist)) {
+      localServerChild = spawn('node', [serverDist], {
+        cwd: path.join(repoRoot, 'server'),
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        env: { ...process.env, PORT: String(port) }
+      });
+      localServerChild.unref();
+      return { success: true, message: 'Servidor local iniciado em segundo plano.' };
+    } else {
+      return { success: false, message: `Ficheiro ${serverDist} não encontrado. Executa a compilação primeiro.` };
+    }
+  }
+
+  return { success: false, message: 'Ação inválida.' };
+});
+
+// Create Backup of Database
+ipcMain.handle('server:backup-db', async () => {
+  try {
+    const repoRoot = app.isPackaged
+      ? path.dirname(app.getPath('exe'))
+      : path.resolve(__dirname, '../..');
+    const dbFile = path.join(repoRoot, 'server', 'data', 'discord.db');
+    const backupDir = path.join(repoRoot, 'server', 'data', 'backups');
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+
+    if (!fs.existsSync(dbFile)) {
+      return { success: false, error: 'A base de dados local ainda não existe.' };
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const backupPath = path.join(backupDir, `discord-backup-${timestamp}.db`);
+    fs.copyFileSync(dbFile, backupPath);
+
+    return { success: true, backupPath };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 });

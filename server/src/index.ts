@@ -7,7 +7,7 @@ import fs from 'fs';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import { Server as SocketIOServer } from 'socket.io';
-import { initDatabase, db } from './db/database';
+import { initDatabase, db, dbPath } from './db/database';
 import { startCleanupScheduler } from './db/cleanup';
 import { authenticateOrRegister, changePin, updateUserColor, updateUserAvatar } from './auth/auth';
 import { setupSocketHandlers } from './socket/socketHandler';
@@ -27,10 +27,11 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Ensure uploads directories exist
-const uploadsDir = path.join(process.cwd(), 'uploads');
-const filesDir = path.join(uploadsDir, 'files');
-const avatarsDir = path.join(uploadsDir, 'avatars');
+// Ensure uploads directories exist (resolved relative to server directory)
+const serverRoot = path.resolve(__dirname, '..');
+export const uploadsDir = process.env.UPLOADS_DIR || path.join(serverRoot, 'uploads');
+export const filesDir = path.join(uploadsDir, 'files');
+export const avatarsDir = path.join(uploadsDir, 'avatars');
 if (!fs.existsSync(filesDir)) fs.mkdirSync(filesDir, { recursive: true });
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 
@@ -347,6 +348,68 @@ app.get('/api/channels/:channelId/messages', (req, res) => {
   } catch (err) {
     console.error('Erro ao buscar mensagens do canal:', err);
     res.status(500).json({ error: 'Erro ao buscar mensagens.' });
+  }
+});
+
+// Host Info endpoint for local server management
+app.get('/api/server/host-info', (_req, res) => {
+  try {
+    const userCount = (db.prepare('SELECT COUNT(*) as count FROM users').get() as any)?.count || 0;
+    const msgCount = (db.prepare('SELECT COUNT(*) as count FROM messages').get() as any)?.count || 0;
+    const channelCount = (db.prepare('SELECT COUNT(*) as count FROM channels').get() as any)?.count || 0;
+
+    let uploadsSizeBytes = 0;
+    let fileCount = 0;
+    const scanDir = (dir: string) => {
+      if (!fs.existsSync(dir)) return;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          scanDir(fullPath);
+        } else {
+          try {
+            uploadsSizeBytes += fs.statSync(fullPath).size;
+            fileCount++;
+          } catch {}
+        }
+      }
+    };
+    scanDir(uploadsDir);
+
+    res.json({
+      status: 'running',
+      uptimeSeconds: Math.floor(process.uptime()),
+      port: PORT,
+      databasePath: dbPath,
+      uploadsPath: uploadsDir,
+      uploadsSizeBytes,
+      fileCount,
+      userCount,
+      msgCount,
+      channelCount,
+      maxUploadMB: 100
+    });
+  } catch (err) {
+    console.error('Erro ao recolher host-info:', err);
+    res.status(500).json({ error: 'Erro ao recolher informações do servidor.' });
+  }
+});
+
+// Clear uploads endpoint
+app.post('/api/server/clear-uploads', (_req, res) => {
+  try {
+    if (fs.existsSync(filesDir)) {
+      const files = fs.readdirSync(filesDir);
+      for (const file of files) {
+        try {
+          fs.unlinkSync(path.join(filesDir, file));
+        } catch {}
+      }
+    }
+    res.json({ success: true, message: 'Pasta de ficheiros limpa com sucesso.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Falha ao limpar ficheiros.' });
   }
 });
 

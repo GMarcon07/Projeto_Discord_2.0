@@ -3,8 +3,10 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 
-const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'data', 'discord.db');
-const dbDir = path.dirname(dbPath);
+const serverRoot = path.resolve(__dirname, '../..');
+export const dbDir = path.join(serverRoot, 'data');
+export const dbPath = process.env.DB_PATH || path.join(dbDir, 'discord.db');
+
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }

@@ -16,7 +16,17 @@ import {
   Server as ServerIcon,
   Globe,
   Upload,
-  Trash2
+  Trash2,
+  FolderOpen,
+  Database,
+  RefreshCw,
+  Power,
+  PowerOff,
+  Copy,
+  ExternalLink,
+  HardDrive,
+  ShieldCheck,
+  Radio
 } from 'lucide-react';
 import { StreamQuality, ThemeMode } from '@discord-mini/shared';
 import { sounds } from '../../utils/soundEffects';
@@ -64,7 +74,7 @@ export const SettingsModal: React.FC = () => {
     updateUserAvatar
   } = useAppStore();
 
-  const [activeTab, setActiveTab] = useState<'voice' | 'stream' | 'appearance' | 'connection' | 'system' | 'account'>('voice');
+  const [activeTab, setActiveTab] = useState<'voice' | 'stream' | 'appearance' | 'connection' | 'system' | 'account' | 'host'>('voice');
 
   // Staged Settings state
   const [stagedInputDev, setStagedInputDev] = useState(inputDeviceId);
@@ -84,17 +94,47 @@ export const SettingsModal: React.FC = () => {
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfoItem[]>([]);
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfoItem[]>([]);
 
-  // Mic test & Live meter state
+  // Mic test & Live meter state with Gating
   const [isTestingMic, setIsTestingMic] = useState(false);
+  const isTestingMicRef = useRef(isTestingMic);
+  useEffect(() => {
+    isTestingMicRef.current = isTestingMic;
+  }, [isTestingMic]);
+
+  const stagedSensitivityRef = useRef(stagedSensitivity);
+  useEffect(() => {
+    stagedSensitivityRef.current = stagedSensitivity;
+  }, [stagedSensitivity]);
+
   const [micVolume, setMicVolume] = useState(0);
   const testStreamRef = useRef<MediaStream | null>(null);
   const testAudioRef = useRef<HTMLAudioElement | null>(null);
   const micContextRef = useRef<AudioContext | null>(null);
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const micGainRef = useRef<GainNode | null>(null);
   const micAnimRef = useRef<number | null>(null);
 
   // Output test audio state
   const [isPlayingOutputTest, setIsPlayingOutputTest] = useState(false);
+
+  // Host Server Management State
+  const [hostStatus, setHostStatus] = useState<{
+    status: string;
+    uptimeSeconds: number;
+    port: number;
+    databasePath: string;
+    uploadsPath: string;
+    uploadsSizeBytes: number;
+    fileCount: number;
+    userCount: number;
+    msgCount: number;
+    channelCount: number;
+    maxUploadMB: number;
+  } | null>(null);
+  const [hostLoading, setHostLoading] = useState(false);
+  const [hostActionMsg, setHostActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [networkIps, setNetworkIps] = useState<Array<{ name: string; address: string; family: string }>>([]);
+  const [copiedIp, setCopiedIp] = useState<string | null>(null);
 
   // Avatar upload state
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -157,21 +197,37 @@ export const SettingsModal: React.FC = () => {
     loadDevices();
   }, [isSettingsOpen]);
 
-  // Stop live meter
+  // Stop live meter and loopback
   const stopLiveMicMeter = () => {
     if (micAnimRef.current) {
       cancelAnimationFrame(micAnimRef.current);
       micAnimRef.current = null;
     }
+    if (micGainRef.current) {
+      try { micGainRef.current.disconnect(); } catch {}
+      micGainRef.current = null;
+    }
+    if (micAnalyserRef.current) {
+      try { micAnalyserRef.current.disconnect(); } catch {}
+      micAnalyserRef.current = null;
+    }
+    if (testStreamRef.current) {
+      testStreamRef.current.getTracks().forEach((t) => t.stop());
+      testStreamRef.current = null;
+    }
     if (micContextRef.current) {
       micContextRef.current.close().catch(() => {});
       micContextRef.current = null;
     }
-    micAnalyserRef.current = null;
+    if (testAudioRef.current) {
+      testAudioRef.current.srcObject = null;
+      testAudioRef.current.pause();
+    }
     setMicVolume(0);
+    setIsTestingMic(false);
   };
 
-  // Start live meter for mic
+  // Start live meter for mic with sensitivity gating
   const startLiveMicMeter = async (deviceId?: string) => {
     stopLiveMicMeter();
     try {
@@ -179,26 +235,51 @@ export const SettingsModal: React.FC = () => {
         audio: {
           deviceId: deviceId ? { exact: deviceId } : undefined,
           noiseSuppression: stagedNoiseSupp,
-          echoCancellation: stagedEchoCanc
+          echoCancellation: stagedEchoCanc,
+          autoGainControl: true
         }
       });
       testStreamRef.current = stream;
 
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const ctx = new AudioCtx();
+      micContextRef.current = ctx;
+
+      const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.25;
-
-      const source = ctx.createMediaStreamSource(stream);
-      source.connect(analyser);
-
-      micContextRef.current = ctx;
       micAnalyserRef.current = analyser;
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      micGainRef.current = gain;
+
+      // Connect: source -> analyser -> gain -> MediaStreamDestination -> testAudioEl
+      source.connect(analyser);
+      analyser.connect(gain);
+
+      const dest = ctx.createMediaStreamDestination();
+      gain.connect(dest);
+
+      if (!testAudioRef.current) {
+        testAudioRef.current = new Audio();
+        testAudioRef.current.autoplay = true;
+      }
+      testAudioRef.current.srcObject = dest.stream;
+
+      if ((testAudioRef.current as any).setSinkId && stagedOutputDev) {
+        try {
+          await (testAudioRef.current as any).setSinkId(stagedOutputDev);
+        } catch (e) {
+          console.warn('setSinkId no retorno falhou:', e);
+        }
+      }
+      testAudioRef.current.play().catch(() => {});
 
       const buffer = new Float32Array(analyser.fftSize);
       const updateLevel = () => {
-        if (!micAnalyserRef.current) return;
+        if (!micAnalyserRef.current || !micContextRef.current) return;
         micAnalyserRef.current.getFloatTimeDomainData(buffer);
         let sum = 0;
         for (let i = 0; i < buffer.length; i++) {
@@ -206,6 +287,23 @@ export const SettingsModal: React.FC = () => {
         }
         const rms = Math.sqrt(sum / buffer.length);
         setMicVolume(rms);
+
+        // Real-time audio gating according to stagedSensitivity and echo/noise suppression
+        if (micGainRef.current && micContextRef.current) {
+          const now = micContextRef.current.currentTime;
+          if (isTestingMicRef.current) {
+            if (rms >= stagedSensitivityRef.current) {
+              // Voice is above dB threshold -> open audio gate smoothly
+              micGainRef.current.gain.setTargetAtTime(1.0, now, 0.015);
+            } else {
+              // Voice is below dB threshold -> cut audio cleanly
+              micGainRef.current.gain.setTargetAtTime(0.0, now, 0.04);
+            }
+          } else {
+            micGainRef.current.gain.setTargetAtTime(0.0, now, 0.02);
+          }
+        }
+
         micAnimRef.current = requestAnimationFrame(updateLevel);
       };
       micAnimRef.current = requestAnimationFrame(updateLevel);
@@ -219,47 +317,158 @@ export const SettingsModal: React.FC = () => {
       startLiveMicMeter(stagedInputDev);
     } else {
       stopLiveMicMeter();
-      if (testStreamRef.current) {
-        testStreamRef.current.getTracks().forEach((t) => t.stop());
-        testStreamRef.current = null;
-      }
-      if (testAudioRef.current) {
-        testAudioRef.current.srcObject = null;
-      }
-      setIsTestingMic(false);
     }
     return () => {
       stopLiveMicMeter();
     };
   }, [isSettingsOpen, activeTab, stagedInputDev]);
 
-  // Mic test loopback toggle (listen to own voice)
+  // Update output device on the live test audio element if user switches
+  useEffect(() => {
+    if (testAudioRef.current && (testAudioRef.current as any).setSinkId && stagedOutputDev) {
+      (testAudioRef.current as any).setSinkId(stagedOutputDev).catch(() => {});
+    }
+  }, [stagedOutputDev]);
+
+  // Mic test loopback toggle (listen to own voice with gate and filters)
   const toggleMicTest = async () => {
     if (isTestingMic) {
-      if (testAudioRef.current) {
-        testAudioRef.current.srcObject = null;
-      }
       setIsTestingMic(false);
     } else {
-      if (!testStreamRef.current) {
+      if (!micContextRef.current) {
         await startLiveMicMeter(stagedInputDev);
       }
-      if (testStreamRef.current) {
-        if (!testAudioRef.current) {
-          testAudioRef.current = new Audio();
-        }
-        testAudioRef.current.srcObject = testStreamRef.current;
-        if ((testAudioRef.current as any).setSinkId && stagedOutputDev) {
-          try {
-            await (testAudioRef.current as any).setSinkId(stagedOutputDev);
-          } catch (e) {
-            console.warn('setSinkId falhou:', e);
-          }
-        }
-        testAudioRef.current.play().catch(() => {});
-        setIsTestingMic(true);
+      setIsTestingMic(true);
+    }
+  };
+
+  // Host info loader
+  const fetchHostInfo = async () => {
+    setHostLoading(true);
+    try {
+      const targetUrl = serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1')
+        ? serverUrl
+        : 'http://localhost:3001';
+
+      const res = await fetch(`${targetUrl}/api/server/host-info`, { signal: AbortSignal.timeout(3000) });
+      if (res.ok) {
+        const data = await res.json();
+        setHostStatus(data);
+      } else {
+        setHostStatus(null);
+      }
+    } catch {
+      setHostStatus(null);
+    } finally {
+      setHostLoading(false);
+    }
+
+    if (window.electronAPI?.getNetworkIps) {
+      try {
+        const ips = await window.electronAPI.getNetworkIps();
+        setNetworkIps(ips);
+      } catch (err) {
+        console.warn('Erro ao obter IPs de rede:', err);
       }
     }
+  };
+
+  useEffect(() => {
+    if (isSettingsOpen && activeTab === 'host') {
+      fetchHostInfo();
+    }
+  }, [isSettingsOpen, activeTab]);
+
+  const handleStartHostServer = async () => {
+    setHostActionMsg(null);
+    if (window.electronAPI?.controlLocalServer) {
+      const res = await window.electronAPI.controlLocalServer('start', 3001);
+      if (res.success) {
+        setHostActionMsg({ type: 'success', text: 'Servidor iniciado com sucesso! A ligar...' });
+        setTimeout(() => fetchHostInfo(), 2000);
+      } else {
+        setHostActionMsg({ type: 'error', text: res.message || 'Falha ao iniciar servidor.' });
+      }
+    }
+  };
+
+  const handleStopHostServer = async () => {
+    setHostActionMsg(null);
+    if (window.electronAPI?.controlLocalServer) {
+      await window.electronAPI.controlLocalServer('stop', 3001);
+      setHostActionMsg({ type: 'success', text: 'Servidor local encerrado.' });
+      setHostStatus(null);
+    }
+  };
+
+  const handleRestartHostServer = async () => {
+    setHostActionMsg(null);
+    if (window.electronAPI?.controlLocalServer) {
+      await window.electronAPI.controlLocalServer('restart', 3001);
+      setHostActionMsg({ type: 'success', text: 'Servidor reiniciado.' });
+      setTimeout(() => fetchHostInfo(), 2000);
+    }
+  };
+
+  const handleConnectToLocalHost = () => {
+    setStagedUrl('http://localhost:3001');
+    setServerUrl('http://localhost:3001');
+    setHostActionMsg({ type: 'success', text: 'Conectado a http://localhost:3001!' });
+  };
+
+  const handleOpenFolder = (folder: string) => {
+    if (window.electronAPI?.openFolder) {
+      window.electronAPI.openFolder(folder);
+    }
+  };
+
+  const handleClearUploads = async () => {
+    if (!confirm('Tens a certeza que queres limpar os ficheiros de uploads antigos?')) return;
+    try {
+      const res = await fetch(`${serverUrl}/api/server/clear-uploads`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setHostActionMsg({ type: 'success', text: 'Ficheiros de uploads limpos!' });
+        fetchHostInfo();
+      }
+    } catch {
+      setHostActionMsg({ type: 'error', text: 'Falha ao comunicar com o servidor.' });
+    }
+  };
+
+  const handleBackupDatabase = async () => {
+    if (window.electronAPI?.backupDatabase) {
+      const res = await window.electronAPI.backupDatabase();
+      if (res.success) {
+        setHostActionMsg({ type: 'success', text: `Backup criado com sucesso em: ${res.backupPath}` });
+      } else {
+        setHostActionMsg({ type: 'error', text: res.error || 'Erro ao criar backup.' });
+      }
+    }
+  };
+
+  const handleCopyIp = (ip: string) => {
+    const fullUrl = `http://${ip}:3001`;
+    navigator.clipboard.writeText(fullUrl);
+    setCopiedIp(fullUrl);
+    setTimeout(() => setCopiedIp(null), 2000);
+  };
+
+  const formatUptime = (seconds?: number) => {
+    if (!seconds) return '0s';
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
+    if (mins > 0) return `${mins}m ${secs}s`;
+    return `${secs}s`;
+  };
+
+  const formatBytes = (bytes?: number) => {
+    if (!bytes) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
   // Test output device sound (play two-tone chime)
@@ -558,6 +767,17 @@ export const SettingsModal: React.FC = () => {
             >
               <Lock size={16} /> Conta & Segurança
             </button>
+
+            <button
+              onClick={() => setActiveTab('host')}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg transition-colors ${
+                activeTab === 'host'
+                  ? 'bg-app-hover text-white font-bold'
+                  : 'text-app-textMuted hover:bg-app-hover hover:text-app-textNormal'
+              }`}
+            >
+              <ServerIcon size={16} className="text-[#23a55a]" /> Servidor Host Local
+            </button>
           </nav>
         </aside>
 
@@ -569,9 +789,10 @@ export const SettingsModal: React.FC = () => {
               {activeTab === 'voice' && 'Definições de Voz e Áudio'}
               {activeTab === 'stream' && 'Definições de Transmissão'}
               {activeTab === 'appearance' && 'Personalização e Temas'}
-              {activeTab === 'connection' && 'Configuração de Servidor'}
-              {activeTab === 'system' && 'Definições do Windows'}
-              {activeTab === 'account' && 'Segurança da Conta'}
+              {activeTab === 'connection' && 'Rede e Servidor'}
+              {activeTab === 'system' && 'Sistema e Desempenho'}
+              {activeTab === 'account' && 'A Minha Conta e Segurança'}
+              {activeTab === 'host' && 'Configurações de Servidor Host Local'}
             </span>
 
             <button
@@ -641,50 +862,66 @@ export const SettingsModal: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Teste de Microfone & Medidor ao Vivo com Corte de Sensibilidade */}
+                {/* Teste de Microfone & Retorno com Corte de Sensibilidade */}
                 <div className="bg-app-card p-4 rounded-xl border border-app-border space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="text-sm font-semibold text-app-textHeader">Teste de Microfone</h4>
-                      <p className="text-xs text-app-textMuted">Fala para testares a tua captação e veres a barra de som a mexer em tempo real.</p>
+                      <h4 className="text-sm font-semibold text-app-textHeader flex items-center gap-2">
+                        <span>Retorno de Microfone (Ouvir a Minha Voz)</span>
+                        {isTestingMic && (
+                          <span className="text-[10px] bg-[#23a55a]/20 text-[#23a55a] font-bold px-2 py-0.5 rounded-full animate-pulse">
+                            RETORNO ATIVO
+                          </span>
+                        )}
+                      </h4>
+                      <p className="text-xs text-app-textMuted">
+                        Ouve o teu microfone nos auscultadores com o limite de corte (gate), supressão de ruído e cancelamento de eco ativos.
+                      </p>
                     </div>
                     <button
+                      type="button"
                       onClick={toggleMicTest}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition-all ${
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold shadow transition-all ${
                         isTestingMic ? 'bg-[#da373c] text-white' : 'bg-app-accent text-white hover:bg-app-accentHover'
                       }`}
                     >
-                      {isTestingMic ? <Square size={12} fill="white" /> : <Play size={12} />}
-                      {isTestingMic ? 'Parar Retorno' : 'Ouvir Retorno'}
+                      {isTestingMic ? <Square size={13} fill="white" /> : <Play size={13} fill="white" />}
+                      {isTestingMic ? 'Parar Retorno' : 'Ouvir a Minha Voz'}
                     </button>
                   </div>
 
                   {/* Barra de volume ao vivo com indicador de corte de sensibilidade */}
                   <div className="space-y-1.5">
-                    <div className="relative w-full h-3.5 bg-black/50 rounded-full overflow-hidden border border-white/10">
+                    <div className="relative w-full h-4 bg-black/50 rounded-full overflow-hidden border border-white/10">
                       {/* Live level fill */}
                       <div
                         className={`h-full transition-all duration-75 rounded-full ${
-                          micVolume >= stagedSensitivity ? 'bg-[#23a55a] shadow-[0_0_10px_#23a55a]' : 'bg-[#23a55a]/60'
+                          micVolume >= stagedSensitivity ? 'bg-[#23a55a] shadow-[0_0_12px_#23a55a]' : 'bg-[#23a55a]/50'
                         }`}
                         style={{ width: `${Math.min(100, micVolume * 100 * 3.5)}%` }}
                       />
 
                       {/* Sensitivity Cutoff Line Marker */}
                       <div
-                        className="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_4px_white] z-10"
+                        className="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_5px_white] z-10"
                         style={{ left: `${Math.min(100, stagedSensitivity * 100 * 3.5)}%` }}
-                        title={`Sensibilidade: ${stagedSensitivity}`}
+                        title={`Limite de ativação: ${stagedSensitivity}`}
                       />
                     </div>
 
                     <div className="flex justify-between items-center text-[10px] text-app-textMuted">
                       <span>Silêncio</span>
                       <span className={`font-semibold ${micVolume >= stagedSensitivity ? 'text-[#23a55a]' : 'text-app-textMuted'}`}>
-                        {micVolume >= stagedSensitivity ? '🟢 Voz Detetada (Ativa)' : '⚪ Voz Abaixo do Corte'}
+                        {micVolume >= stagedSensitivity ? '🟢 Som Ativo (A transmitir voz)' : '⚪ Som Cortado (Abaixo do limite de dB)'}
                       </span>
                       <span>Máximo</span>
                     </div>
+
+                    {isTestingMic && (
+                      <p className="text-[11px] text-[#f0b232] bg-[#f0b232]/10 border border-[#f0b232]/20 rounded-lg p-2 mt-1">
+                        🎧 <strong>Aviso:</strong> Certifica-te de que estás a usar auscultadores para evitar feedback/eco no retorno.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -1188,6 +1425,255 @@ export const SettingsModal: React.FC = () => {
                     </button>
                   </div>
                 </form>
+              </div>
+            )}
+
+            {/* TAB: SERVIDOR HOST LOCAL */}
+            {activeTab === 'host' && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-xl font-bold text-app-textHeader flex items-center gap-2">
+                    <ServerIcon className="text-[#23a55a]" size={22} />
+                    <span>Servidor Host Local (Criar & Gerir Servidor no PC)</span>
+                  </h2>
+                  <p className="text-xs text-app-textMuted">
+                    Tudo o que precisas para hospedar o teu próprio servidor d'A resenha no teu PC e jogar com amigos.
+                  </p>
+                </div>
+
+                {hostActionMsg && (
+                  <div className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                    hostActionMsg.type === 'success' ? 'bg-[#23a55a]/15 text-[#23a55a] border border-[#23a55a]/30' : 'bg-[#da373c]/15 text-[#f23f43] border border-[#da373c]/30'
+                  }`}>
+                    <AlertCircle size={15} />
+                    <span>{hostActionMsg.text}</span>
+                  </div>
+                )}
+
+                {/* Status Card */}
+                <div className="bg-app-card p-4 rounded-xl border border-app-border space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3.5 h-3.5 rounded-full ${hostStatus ? 'bg-[#23a55a] shadow-[0_0_10px_#23a55a]' : 'bg-[#da373c]'}`} />
+                      <div>
+                        <h4 className="text-sm font-bold text-app-textHeader">
+                          {hostStatus ? 'Servidor Local Ativo' : 'Servidor Local Inativo ou Inacessível'}
+                        </h4>
+                        <p className="text-xs text-app-textMuted">
+                          {hostStatus ? `Em execução na porta ${hostStatus.port} • Uptime: ${formatUptime(hostStatus.uptimeSeconds)}` : 'Clica abaixo para iniciar o servidor local neste PC.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={fetchHostInfo}
+                      disabled={hostLoading}
+                      className="p-1.5 rounded-lg bg-app-tertiary hover:bg-app-hover text-app-textMuted hover:text-white transition-colors"
+                      title="Atualizar Estado"
+                    >
+                      <RefreshCw size={14} className={hostLoading ? 'animate-spin' : ''} />
+                    </button>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-app-border/40">
+                    <button
+                      type="button"
+                      onClick={handleStartHostServer}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#23a55a] hover:bg-[#1f934f] text-white rounded-lg text-xs font-semibold shadow transition-all"
+                    >
+                      <Power size={13} />
+                      <span>Iniciar Servidor Local</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRestartHostServer}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-app-tertiary hover:bg-app-hover text-app-textNormal rounded-lg text-xs font-semibold transition-colors"
+                    >
+                      <RefreshCw size={13} />
+                      <span>Reiniciar</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleStopHostServer}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[#da373c]/20 hover:bg-[#da373c]/30 text-[#f23f43] rounded-lg text-xs font-semibold transition-colors"
+                    >
+                      <PowerOff size={13} />
+                      <span>Parar Servidor</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleConnectToLocalHost}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-app-accent hover:bg-app-accentHover text-white rounded-lg text-xs font-semibold shadow ml-auto transition-colors"
+                    >
+                      <Globe size={13} />
+                      <span>Ligar App a Localhost</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Conexão para Amigos (IPs da Rede) */}
+                <div className="bg-app-card p-4 rounded-xl border border-app-border space-y-3">
+                  <div>
+                    <h4 className="text-sm font-bold text-app-textHeader flex items-center gap-2">
+                      <Radio size={16} className="text-[#23a55a]" />
+                      <span>Endereços de Conexão para Amigos</span>
+                    </h4>
+                    <p className="text-xs text-app-textMuted">
+                      Partilha estes endereços com quem quiser entrar no teu servidor:
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    {/* Localhost (Este PC) */}
+                    <div className="flex items-center justify-between p-2.5 bg-app-tertiary rounded-lg border border-app-border/40">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-app-accent tracking-wider">Este Computador</span>
+                        <p className="font-mono text-xs font-bold text-white">http://localhost:3001</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyIp('localhost')}
+                        className="px-2.5 py-1 text-xs bg-app-card hover:bg-app-hover border border-app-border rounded text-white flex items-center gap-1 transition-colors"
+                      >
+                        {copiedIp === 'http://localhost:3001' ? <Check size={12} className="text-[#23a55a]" /> : <Copy size={12} />}
+                        <span>{copiedIp === 'http://localhost:3001' ? 'Copiado!' : 'Copiar'}</span>
+                      </button>
+                    </div>
+
+                    {/* IPs de Rede Local (Wi-Fi / LAN) */}
+                    {networkIps.map((net) => {
+                      const url = `http://${net.address}:3001`;
+                      const isCopied = copiedIp === url;
+                      return (
+                        <div key={net.address} className="flex items-center justify-between p-2.5 bg-app-tertiary rounded-lg border border-app-border/40">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase text-[#23a55a] tracking-wider">
+                              Rede Wi-Fi / Cabo ({net.name})
+                            </span>
+                            <p className="font-mono text-xs font-bold text-white">{url}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyIp(net.address)}
+                            className="px-2.5 py-1 text-xs bg-[#23a55a]/20 hover:bg-[#23a55a]/30 text-[#23a55a] rounded font-semibold flex items-center gap-1 transition-colors"
+                          >
+                            {isCopied ? <Check size={12} /> : <Copy size={12} />}
+                            <span>{isCopied ? 'Copiado!' : 'Copiar para Amigos'}</span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Como jogar com amigos pela Internet (Fora de casa) */}
+                <div className="bg-app-card p-4 rounded-xl border border-app-border space-y-3">
+                  <h4 className="text-sm font-bold text-app-textHeader flex items-center gap-2">
+                    <Globe size={16} className="text-app-accent" />
+                    <span>Como convidar amigos fora da tua rede Wi-Fi</span>
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs">
+                    <div className="p-3 bg-app-tertiary rounded-lg border border-app-border/40 space-y-1">
+                      <p className="font-bold text-white">1. Radmin VPN ou Hamachi</p>
+                      <p className="text-[11px] text-app-textMuted leading-relaxed">
+                        Cria uma sala no Radmin VPN (grátis) com os teus amigos. Eles colam o teu IP do Radmin na app e entram direto!
+                      </p>
+                    </div>
+                    <div className="p-3 bg-app-tertiary rounded-lg border border-app-border/40 space-y-1">
+                      <p className="font-bold text-white">2. Ngrok / Cloudflare</p>
+                      <p className="text-[11px] text-app-textMuted leading-relaxed">
+                        Executa <code>ngrok http 3001</code> no CMD para ter um link HTTPS público sem mexer em nenhuma porta de router.
+                      </p>
+                    </div>
+                    <div className="p-3 bg-app-tertiary rounded-lg border border-app-border/40 space-y-1">
+                      <p className="font-bold text-white">3. Port Forwarding</p>
+                      <p className="text-[11px] text-app-textMuted leading-relaxed">
+                        Abre a porta TCP <code>3001</code> no teu router doméstico direcionada para o teu IP local.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Armazenamento & Ficheiros */}
+                <div className="bg-app-card p-4 rounded-xl border border-app-border space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-app-textHeader flex items-center gap-2">
+                        <FolderOpen size={16} className="text-[#f0b232]" />
+                        <span>Ficheiros, Fotos & Vídeos (Armazenamento)</span>
+                      </h4>
+                      <p className="text-xs text-app-textMuted">
+                        Espaço ocupado: <strong className="text-white">{formatBytes(hostStatus?.uploadsSizeBytes)}</strong> ({hostStatus?.fileCount || 0} ficheiros) • Limite por ficheiro: 100MB
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenFolder('server/uploads')}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-app-tertiary hover:bg-app-hover border border-app-border rounded-lg text-xs font-semibold text-white transition-colors"
+                      >
+                        <FolderOpen size={13} className="text-[#f0b232]" />
+                        <span>Abrir Pasta de Uploads</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearUploads}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-[#da373c]/15 hover:bg-[#da373c]/25 border border-[#da373c]/30 rounded-lg text-xs font-semibold text-[#f23f43] transition-colors"
+                      >
+                        <Trash2 size={13} />
+                        <span>Limpar Uploads</span>
+                      </button>
+                    </div>
+                  </div>
+                  {hostStatus?.uploadsPath && (
+                    <p className="text-[10px] font-mono text-app-textMuted bg-app-tertiary p-2 rounded truncate">
+                      {hostStatus.uploadsPath}
+                    </p>
+                  )}
+                </div>
+
+                {/* Base de Dados & Backup */}
+                <div className="bg-app-card p-4 rounded-xl border border-app-border space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-app-textHeader flex items-center gap-2">
+                        <Database size={16} className="text-[#5865F2]" />
+                        <span>Base de Dados SQLite</span>
+                      </h4>
+                      <p className="text-xs text-app-textMuted">
+                        {hostStatus?.userCount || 0} utilizadores • {hostStatus?.msgCount || 0} mensagens guardadas • {hostStatus?.channelCount || 0} canais
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenFolder('server/data')}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-app-tertiary hover:bg-app-hover border border-app-border rounded-lg text-xs font-semibold text-white transition-colors"
+                      >
+                        <FolderOpen size={13} />
+                        <span>Abrir Pasta de Dados</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleBackupDatabase}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-app-accent hover:bg-app-accentHover text-white rounded-lg text-xs font-semibold shadow transition-colors"
+                      >
+                        <ShieldCheck size={13} />
+                        <span>Criar Backup da BD</span>
+                      </button>
+                    </div>
+                  </div>
+                  {hostStatus?.databasePath && (
+                    <p className="text-[10px] font-mono text-app-textMuted bg-app-tertiary p-2 rounded truncate">
+                      {hostStatus.databasePath}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </div>

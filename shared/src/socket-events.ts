@@ -47,4 +47,6 @@ export interface ServerToClientEvents {
   'server:created': (data: { server: Server }) => void;
   'user:color_updated': (data: { userId: string; color: string }) => void;
   'user:avatar_updated': (data: { userId: string; avatarUrl: string }) => void;
+  'auth:synced': (data: { user: User }) => void;
+  'auth:required': (data: { message: string }) => void;
 }

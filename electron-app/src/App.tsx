@@ -139,7 +139,22 @@ export const App: React.FC = () => {
 
     // Online Presence updates
     socket.on('presence:update', ({ users }) => {
-      setMembers(users);
+      if (currentUser && !users.some((u) => u.id === currentUser.id)) {
+        setMembers([...users, { ...currentUser, isOnline: true }]);
+      } else {
+        setMembers(users);
+      }
+    });
+
+    // Session synchronization & invalidation
+    socket.on('auth:synced', ({ user }) => {
+      console.log('[AUTH] Sessão sincronizada com o servidor:', user);
+      setCurrentUser(user);
+    });
+
+    socket.on('auth:required', ({ message }) => {
+      console.warn('[AUTH] Autenticação necessária:', message);
+      setCurrentUser(null);
     });
 
     // Chat Messages
@@ -162,7 +177,23 @@ export const App: React.FC = () => {
 
     // WebRTC Voice Signaling
     socket.on('voice:room_participants', ({ channelId, participants }) => {
-      setVoiceParticipants(participants);
+      let finalParticipants = participants;
+      if (!participants.some((p) => p.userId === currentUser.id)) {
+        finalParticipants = [
+          ...participants,
+          {
+            userId: currentUser.id,
+            username: currentUser.username,
+            color: currentUser.color,
+            avatarUrl: currentUser.avatarUrl,
+            isMuted,
+            isDeafened,
+            isSpeaking: false,
+            isScreenSharing
+          }
+        ];
+      }
+      setVoiceParticipants(finalParticipants);
       voiceManagerRef.current?.connectToParticipants(participants);
     });
 
@@ -307,7 +338,18 @@ export const App: React.FC = () => {
       setPeerPing(userId, pingMs);
     };
 
-    setActiveVoiceChannel(channelId);
+    const localParticipant: VoiceParticipant = {
+      userId: currentUser.id,
+      username: currentUser.username,
+      color: currentUser.color,
+      avatarUrl: currentUser.avatarUrl,
+      isMuted,
+      isDeafened,
+      isSpeaking: false,
+      isScreenSharing
+    };
+
+    setActiveVoiceChannel(channelId, [localParticipant]);
     socketRef.current.emit('voice:join', { channelId });
   };
 

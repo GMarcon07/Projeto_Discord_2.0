@@ -45,29 +45,58 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
 
     // User authentication / identification
     socket.on('user:auth', ({ userId, username }) => {
-      const userRow = db.prepare('SELECT id, username, color, avatar_url FROM users WHERE id = ?').get(userId) as any;
-      if (!userRow) return;
+      let userRow = db.prepare('SELECT id, username, color, avatar_url, created_at FROM users WHERE id = ?').get(userId) as any;
+      if (!userRow && username) {
+        // Fallback: match by username (e.g. if user connected to another server with same username)
+        userRow = db.prepare('SELECT id, username, color, avatar_url, created_at FROM users WHERE username = ? COLLATE NOCASE').get(username) as any;
+      }
+
+      if (!userRow) {
+        console.warn(`[SOCKET] Utilizador não reconhecido neste servidor: ${username} (${userId})`);
+        socket.emit('auth:required', { message: 'Sessão inválida neste servidor. Por favor entra com o teu PIN.' });
+        return;
+      }
+
+      const canonicalUserId = userRow.id;
 
       socketToUser.set(socket.id, {
-        userId: userRow.id,
+        userId: canonicalUserId,
         username: userRow.username,
         color: userRow.color,
         avatarUrl: userRow.avatar_url || undefined
       });
 
-      if (!userSockets.has(userId)) {
-        userSockets.set(userId, new Set());
+      if (!userSockets.has(canonicalUserId)) {
+        userSockets.set(canonicalUserId, new Set());
       }
-      userSockets.get(userId)!.add(socket.id);
+      userSockets.get(canonicalUserId)!.add(socket.id);
 
-      console.log(`[SOCKET] Utilizador autenticado no socket: ${userRow.username} (${userId})`);
+      // If user ID was different from the requested one, sync client store
+      if (canonicalUserId !== userId) {
+        socket.emit('auth:synced', {
+          user: {
+            id: userRow.id,
+            username: userRow.username,
+            color: userRow.color,
+            avatarUrl: userRow.avatar_url || undefined,
+            isOnline: true,
+            createdAt: userRow.created_at
+          }
+        });
+      }
+
+      console.log(`[SOCKET] Utilizador autenticado no socket: ${userRow.username} (${canonicalUserId})`);
       broadcastPresence();
     });
 
     // Chat messaging
     socket.on('chat:send_message', ({ channelId, content, fileUrl, fileName, fileType, fileSize }) => {
       const userInfo = socketToUser.get(socket.id);
-      if (!userInfo) return;
+      if (!userInfo) {
+        console.warn(`[CHAT] Mensagem rejeitada: socket ${socket.id} não autenticado`);
+        socket.emit('auth:required', { message: 'Precisas de estar autenticado para enviar mensagens.' });
+        return;
+      }
 
       const trimmed = (content || '').trim();
       if (!trimmed && !fileUrl) return;
@@ -117,7 +146,11 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
     // WebRTC Voice Join
     socket.on('voice:join', ({ channelId }) => {
       const userInfo = socketToUser.get(socket.id);
-      if (!userInfo) return;
+      if (!userInfo) {
+        console.warn(`[VOICE] Entrada em voz rejeitada: socket ${socket.id} não autenticado`);
+        socket.emit('auth:required', { message: 'Precisas de estar autenticado para entrar em chamadas.' });
+        return;
+      }
 
       // If already in a voice channel, leave first
       const currentChannel = userVoiceLocation.get(userInfo.userId);
@@ -141,19 +174,17 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
         isScreenSharing: false
       };
 
-      // Existing participants before adding newcomer
-      const existingParticipants = Array.from(participantsMap.values());
-
-      // Add newcomer
+      // Add newcomer to participants map
       participantsMap.set(userInfo.userId, participant);
       userVoiceLocation.set(userInfo.userId, channelId);
 
       socket.join(`voice_${channelId}`);
 
-      // Send list of existing participants to the joining user
+      // Send list of ALL participants in the channel (including the newcomer) to the joining user
+      const allParticipants = Array.from(participantsMap.values());
       socket.emit('voice:room_participants', {
         channelId,
-        participants: existingParticipants
+        participants: allParticipants
       });
 
       // Broadcast to all other participants that this user joined

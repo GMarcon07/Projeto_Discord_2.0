@@ -5,8 +5,14 @@ import { Volume2 } from 'lucide-react';
 export const MemberList: React.FC = () => {
   const { members, voiceParticipants, currentUser, openContextMenu } = useAppStore();
 
-  const onlineMembers = members.filter((m) => m.isOnline);
-  const offlineMembers = members.filter((m) => !m.isOnline);
+  // Ensure current user is always present in the list
+  const displayMembers = [...members];
+  if (currentUser && !displayMembers.some((m) => m.id === currentUser.id)) {
+    displayMembers.push({ ...currentUser, isOnline: true });
+  }
+
+  const onlineMembers = displayMembers.filter((m) => m.isOnline);
+  const offlineMembers = displayMembers.filter((m) => !m.isOnline);
 
   const isUserSpeakingInVoice = (userId: string) => {
     return voiceParticipants.some((p) => p.userId === userId && p.isSpeaking);
