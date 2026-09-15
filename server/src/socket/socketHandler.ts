@@ -13,7 +13,7 @@ import {
 
 export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>) {
   // Presence state
-  const socketToUser = new Map<string, { userId: string; username: string; color: string }>();
+  const socketToUser = new Map<string, { userId: string; username: string; color: string; avatarUrl?: string }>();
   const userSockets = new Map<string, Set<string>>();
 
   // Voice rooms state: channelId -> Map<userId, VoiceParticipant>
@@ -45,13 +45,14 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
 
     // User authentication / identification
     socket.on('user:auth', ({ userId, username }) => {
-      const userRow = db.prepare('SELECT id, username, color FROM users WHERE id = ?').get(userId) as any;
+      const userRow = db.prepare('SELECT id, username, color, avatar_url FROM users WHERE id = ?').get(userId) as any;
       if (!userRow) return;
 
       socketToUser.set(socket.id, {
         userId: userRow.id,
         username: userRow.username,
-        color: userRow.color
+        color: userRow.color,
+        avatarUrl: userRow.avatar_url || undefined
       });
 
       if (!userSockets.has(userId)) {
@@ -64,21 +65,34 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
     });
 
     // Chat messaging
-    socket.on('chat:send_message', ({ channelId, content }) => {
+    socket.on('chat:send_message', ({ channelId, content, fileUrl, fileName, fileType, fileSize }) => {
       const userInfo = socketToUser.get(socket.id);
       if (!userInfo) return;
 
-      const trimmed = content.trim();
-      if (!trimmed || trimmed.length > 2000) return;
+      const trimmed = (content || '').trim();
+      if (!trimmed && !fileUrl) return;
+      if (trimmed.length > 2000) return;
 
       const messageId = uuidv4();
       const createdAt = new Date().toISOString();
 
       try {
         db.prepare(`
-          INSERT INTO messages (id, channel_id, user_id, username, user_color, content, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(messageId, channelId, userInfo.userId, userInfo.username, userInfo.color, trimmed, createdAt);
+          INSERT INTO messages (id, channel_id, user_id, username, user_color, content, file_url, file_name, file_type, file_size, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          messageId,
+          channelId,
+          userInfo.userId,
+          userInfo.username,
+          userInfo.color,
+          trimmed,
+          fileUrl || null,
+          fileName || null,
+          fileType || null,
+          fileSize || null,
+          createdAt
+        );
 
         const newMsg: Message = {
           id: messageId,
@@ -87,6 +101,10 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
           username: userInfo.username,
           userColor: userInfo.color,
           content: trimmed,
+          fileUrl: fileUrl || undefined,
+          fileName: fileName || undefined,
+          fileType: fileType || undefined,
+          fileSize: fileSize || undefined,
           createdAt
         };
 
@@ -116,6 +134,7 @@ export function setupSocketHandlers(io: SocketIOServer<ClientToServerEvents, Ser
         userId: userInfo.userId,
         username: userInfo.username,
         color: userInfo.color,
+        avatarUrl: userInfo.avatarUrl,
         isMuted: false,
         isDeafened: false,
         isSpeaking: false,

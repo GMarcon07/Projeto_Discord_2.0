@@ -18,7 +18,8 @@ export const MemberList: React.FC = () => {
     openContextMenu(e.clientX, e.clientY, {
       id: member.id,
       username: member.username,
-      color: member.color
+      color: member.color,
+      avatarUrl: member.avatarUrl
     });
   };
 
@@ -32,7 +33,6 @@ export const MemberList: React.FC = () => {
         <div className="space-y-0.5">
           {onlineMembers.map((member) => {
             const speaking = isUserSpeakingInVoice(member.id);
-            const isRainbow = member.color === 'rainbow';
             return (
               <div
                 key={member.id}
@@ -42,20 +42,30 @@ export const MemberList: React.FC = () => {
               >
                 {/* Avatar with Online badge */}
                 <div className="relative shrink-0">
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white shadow-sm ${
-                      speaking ? 'speaking-ring' : ''
-                    } ${isRainbow ? 'avatar-rainbow' : ''}`}
-                    style={!isRainbow ? { backgroundColor: member.color } : {}}
-                  >
-                    {member.username[0]?.toUpperCase()}
-                  </div>
+                  {member.avatarUrl ? (
+                    <img
+                      src={member.avatarUrl}
+                      alt={member.username}
+                      className={`w-8 h-8 rounded-full object-cover shadow-sm ${
+                        speaking ? 'speaking-ring' : ''
+                      }`}
+                    />
+                  ) : (
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white shadow-sm ${
+                        speaking ? 'speaking-ring' : ''
+                      }`}
+                      style={{ backgroundColor: member.color || '#5865F2' }}
+                    >
+                      {member.username[0]?.toUpperCase()}
+                    </div>
+                  )}
                   <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#23a55a] border-2 border-app-secondary" />
                 </div>
 
                 {/* Member Info */}
                 <div className="flex items-center justify-between min-w-0 flex-1">
-                  <span className={`text-sm font-medium text-app-textNormal group-hover:text-white truncate ${isRainbow ? 'text-rainbow' : ''}`}>
+                  <span className="text-sm font-medium text-app-textNormal group-hover:text-white truncate">
                     {member.username}
                   </span>
                   {speaking && (
@@ -76,7 +86,6 @@ export const MemberList: React.FC = () => {
           </h4>
           <div className="space-y-0.5 opacity-60">
             {offlineMembers.map((member) => {
-              const isRainbow = member.color === 'rainbow';
               return (
                 <div
                   key={member.id}
@@ -85,17 +94,25 @@ export const MemberList: React.FC = () => {
                 >
                   {/* Avatar with Offline badge */}
                   <div className="relative shrink-0">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white shadow-sm ${isRainbow ? 'avatar-rainbow' : ''}`}
-                      style={!isRainbow ? { backgroundColor: member.color } : {}}
-                    >
-                      {member.username[0]?.toUpperCase()}
-                    </div>
+                    {member.avatarUrl ? (
+                      <img
+                        src={member.avatarUrl}
+                        alt={member.username}
+                        className="w-8 h-8 rounded-full object-cover shadow-sm"
+                      />
+                    ) : (
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white shadow-sm"
+                        style={{ backgroundColor: member.color || '#5865F2' }}
+                      >
+                        {member.username[0]?.toUpperCase()}
+                      </div>
+                    )}
                     <div className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-[#80848e] border-2 border-app-secondary" />
                   </div>
 
                   {/* Member Info */}
-                  <span className={`text-sm font-medium text-app-textMuted truncate ${isRainbow ? 'text-rainbow' : ''}`}>
+                  <span className="text-sm font-medium text-app-textMuted truncate">
                     {member.username}
                   </span>
                 </div>

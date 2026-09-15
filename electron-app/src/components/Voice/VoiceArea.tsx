@@ -96,7 +96,6 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
         {voiceParticipants.map((participant) => {
           const isLocal = participant.userId === currentUser?.id;
           const pingMs = !isLocal ? peerPings[participant.userId] : undefined;
-          const isRainbow = participant.color === 'rainbow';
 
           return (
             <div
@@ -108,6 +107,7 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
                     id: participant.userId,
                     username: participant.username,
                     color: participant.color,
+                    avatarUrl: participant.avatarUrl,
                     isScreenSharing: participant.isScreenSharing
                   });
                 }
@@ -142,18 +142,28 @@ export const VoiceArea: React.FC<VoiceAreaProps> = ({
               )}
 
               {/* Avatar with speaking ring */}
-              <div
-                className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white shadow-md transition-transform ${
-                  participant.isSpeaking ? 'scale-105 speaking-ring' : ''
-                } ${isRainbow ? 'avatar-rainbow' : ''}`}
-                style={!isRainbow ? { backgroundColor: participant.color } : {}}
-              >
-                {participant.username[0]?.toUpperCase()}
-              </div>
+              {participant.avatarUrl ? (
+                <img
+                  src={participant.avatarUrl}
+                  alt={participant.username}
+                  className={`w-16 h-16 rounded-full object-cover shadow-md transition-transform ${
+                    participant.isSpeaking ? 'scale-105 speaking-ring' : ''
+                  }`}
+                />
+              ) : (
+                <div
+                  className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white shadow-md transition-transform ${
+                    participant.isSpeaking ? 'scale-105 speaking-ring' : ''
+                  }`}
+                  style={{ backgroundColor: participant.color || '#5865F2' }}
+                >
+                  {participant.username[0]?.toUpperCase()}
+                </div>
+              )}
 
               {/* Username & Audio status */}
               <div className="flex items-center gap-1.5 max-w-full">
-                <span className={`text-xs font-semibold text-app-textNormal truncate ${isRainbow ? 'text-rainbow' : ''}`}>
+                <span className="text-xs font-semibold text-app-textNormal truncate">
                   {participant.username}
                 </span>
                 {participant.isMuted && (

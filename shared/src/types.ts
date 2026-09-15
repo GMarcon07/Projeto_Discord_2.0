@@ -2,6 +2,7 @@ export interface User {
   id: string;
   username: string;
   color: string;
+  avatarUrl?: string;
   isOnline: boolean;
   createdAt: string;
 }
@@ -31,6 +32,10 @@ export interface Message {
   username: string;
   userColor: string;
   content: string;
+  fileUrl?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
   createdAt: string;
 }
 
@@ -38,6 +43,7 @@ export interface VoiceParticipant {
   userId: string;
   username: string;
   color: string;
+  avatarUrl?: string;
   isMuted: boolean;
   isDeafened: boolean;
   isSpeaking: boolean;

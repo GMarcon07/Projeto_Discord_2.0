@@ -11,10 +11,12 @@ import {
   Check,
   AlertCircle,
   Play,
+  Square,
   RotateCcw,
-  Sparkles,
   Server as ServerIcon,
-  Globe
+  Globe,
+  Upload,
+  Trash2
 } from 'lucide-react';
 import { StreamQuality, ThemeMode } from '@discord-mini/shared';
 import { sounds } from '../../utils/soundEffects';
@@ -29,6 +31,7 @@ export const SettingsModal: React.FC = () => {
     isSettingsOpen,
     setSettingsOpen,
     currentUser,
+    setCurrentUser,
     serverUrl,
     setServerUrl,
     inputDeviceId,
@@ -57,7 +60,8 @@ export const SettingsModal: React.FC = () => {
     setMinimizeToTray,
     disableGpu,
     setDisableGpu,
-    updateUserColor
+    updateUserColor,
+    updateUserAvatar
   } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<'voice' | 'stream' | 'appearance' | 'connection' | 'system' | 'account'>('voice');
@@ -80,10 +84,22 @@ export const SettingsModal: React.FC = () => {
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfoItem[]>([]);
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfoItem[]>([]);
 
-  // Mic test state
+  // Mic test & Live meter state
   const [isTestingMic, setIsTestingMic] = useState(false);
+  const [micVolume, setMicVolume] = useState(0);
   const testStreamRef = useRef<MediaStream | null>(null);
   const testAudioRef = useRef<HTMLAudioElement | null>(null);
+  const micContextRef = useRef<AudioContext | null>(null);
+  const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const micAnimRef = useRef<number | null>(null);
+
+  // Output test audio state
+  const [isPlayingOutputTest, setIsPlayingOutputTest] = useState(false);
+
+  // Avatar upload state
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarSuccess, setAvatarSuccess] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Save feedback state
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -141,40 +157,221 @@ export const SettingsModal: React.FC = () => {
     loadDevices();
   }, [isSettingsOpen]);
 
-  // Mic test loopback
-  const toggleMicTest = async () => {
-    if (isTestingMic) {
-      testStreamRef.current?.getTracks().forEach((t) => t.stop());
-      testStreamRef.current = null;
-      if (testAudioRef.current) testAudioRef.current.srcObject = null;
-      setIsTestingMic(false);
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            deviceId: stagedInputDev ? { exact: stagedInputDev } : undefined,
-            noiseSuppression: stagedNoiseSupp,
-            echoCancellation: stagedEchoCanc
-          }
-        });
-        testStreamRef.current = stream;
-        if (!testAudioRef.current) {
-          testAudioRef.current = new Audio();
+  // Stop live meter
+  const stopLiveMicMeter = () => {
+    if (micAnimRef.current) {
+      cancelAnimationFrame(micAnimRef.current);
+      micAnimRef.current = null;
+    }
+    if (micContextRef.current) {
+      micContextRef.current.close().catch(() => {});
+      micContextRef.current = null;
+    }
+    micAnalyserRef.current = null;
+    setMicVolume(0);
+  };
+
+  // Start live meter for mic
+  const startLiveMicMeter = async (deviceId?: string) => {
+    stopLiveMicMeter();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: deviceId ? { exact: deviceId } : undefined,
+          noiseSuppression: stagedNoiseSupp,
+          echoCancellation: stagedEchoCanc
         }
-        testAudioRef.current.srcObject = stream;
-        testAudioRef.current.play();
-        setIsTestingMic(true);
-      } catch (err) {
-        console.error('Falha ao iniciar teste do microfone:', err);
-      }
+      });
+      testStreamRef.current = stream;
+
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioCtx();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.25;
+
+      const source = ctx.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      micContextRef.current = ctx;
+      micAnalyserRef.current = analyser;
+
+      const buffer = new Float32Array(analyser.fftSize);
+      const updateLevel = () => {
+        if (!micAnalyserRef.current) return;
+        micAnalyserRef.current.getFloatTimeDomainData(buffer);
+        let sum = 0;
+        for (let i = 0; i < buffer.length; i++) {
+          sum += buffer[i] * buffer[i];
+        }
+        const rms = Math.sqrt(sum / buffer.length);
+        setMicVolume(rms);
+        micAnimRef.current = requestAnimationFrame(updateLevel);
+      };
+      micAnimRef.current = requestAnimationFrame(updateLevel);
+    } catch (err) {
+      console.warn('Erro ao ler microfone para medidor:', err);
     }
   };
 
   useEffect(() => {
+    if (isSettingsOpen && activeTab === 'voice') {
+      startLiveMicMeter(stagedInputDev);
+    } else {
+      stopLiveMicMeter();
+      if (testStreamRef.current) {
+        testStreamRef.current.getTracks().forEach((t) => t.stop());
+        testStreamRef.current = null;
+      }
+      if (testAudioRef.current) {
+        testAudioRef.current.srcObject = null;
+      }
+      setIsTestingMic(false);
+    }
     return () => {
-      testStreamRef.current?.getTracks().forEach((t) => t.stop());
+      stopLiveMicMeter();
     };
-  }, []);
+  }, [isSettingsOpen, activeTab, stagedInputDev]);
+
+  // Mic test loopback toggle (listen to own voice)
+  const toggleMicTest = async () => {
+    if (isTestingMic) {
+      if (testAudioRef.current) {
+        testAudioRef.current.srcObject = null;
+      }
+      setIsTestingMic(false);
+    } else {
+      if (!testStreamRef.current) {
+        await startLiveMicMeter(stagedInputDev);
+      }
+      if (testStreamRef.current) {
+        if (!testAudioRef.current) {
+          testAudioRef.current = new Audio();
+        }
+        testAudioRef.current.srcObject = testStreamRef.current;
+        if ((testAudioRef.current as any).setSinkId && stagedOutputDev) {
+          try {
+            await (testAudioRef.current as any).setSinkId(stagedOutputDev);
+          } catch (e) {
+            console.warn('setSinkId falhou:', e);
+          }
+        }
+        testAudioRef.current.play().catch(() => {});
+        setIsTestingMic(true);
+      }
+    }
+  };
+
+  // Test output device sound (play two-tone chime)
+  const handleTestOutputDevice = async () => {
+    if (isPlayingOutputTest) return;
+    setIsPlayingOutputTest(true);
+
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioCtx();
+
+      if ((ctx as any).setSinkId && stagedOutputDev) {
+        try {
+          await (ctx as any).setSinkId(stagedOutputDev);
+        } catch (e) {
+          console.warn('setSinkId no AudioContext falhou:', e);
+        }
+      }
+
+      const now = ctx.currentTime;
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, now); // D5
+      osc1.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
+
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(880, now + 0.15); // A5
+      osc2.frequency.exponentialRampToValueAtTime(1174.66, now + 0.35); // D6
+
+      gainNode.gain.setValueAtTime(0.01, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.2, now + 0.05);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+      osc1.connect(gainNode);
+      osc2.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      osc1.start(now);
+      osc1.stop(now + 0.2);
+      osc2.start(now + 0.15);
+      osc2.stop(now + 0.6);
+
+      setTimeout(() => {
+        setIsPlayingOutputTest(false);
+        ctx.close();
+      }, 700);
+    } catch (err) {
+      console.error('Erro ao testar som de saída:', err);
+      setIsPlayingOutputTest(false);
+    }
+  };
+
+  // Handle avatar upload
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor seleciona um ficheiro de imagem (PNG, JPG, GIF ou WebP).');
+      return;
+    }
+
+    if (file.size > 15 * 1024 * 1024) {
+      alert('A imagem deve ter no máximo 15MB.');
+      return;
+    }
+
+    setAvatarUploading(true);
+    setAvatarSuccess(false);
+
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      const res = await fetch(`${serverUrl}/api/users/${currentUser.id}/avatar`, {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        updateUserAvatar(currentUser.id, data.avatarUrl);
+        setAvatarSuccess(true);
+        setTimeout(() => setAvatarSuccess(false), 3000);
+      } else {
+        alert(data.message || 'Erro ao carregar foto de perfil.');
+      }
+    } catch (err) {
+      console.error('Erro no upload de avatar:', err);
+      alert('Falha na comunicação com o servidor para enviar a foto.');
+    } finally {
+      setAvatarUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    if (!currentUser) return;
+    try {
+      await fetch(`${serverUrl}/api/users/${currentUser.id}/avatar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatarUrl: '' })
+      });
+      updateUserAvatar(currentUser.id, '');
+    } catch (err) {
+      console.error('Erro ao remover avatar:', err);
+    }
+  };
 
   // Apply All Settings
   const handleApplySettings = async () => {
@@ -288,8 +485,9 @@ export const SettingsModal: React.FC = () => {
         {/* Left Sidebar navigation */}
         <aside className="w-56 bg-app-tertiary flex flex-col p-4 border-r border-app-border shrink-0 select-none">
           <div className="px-2 pb-4 mb-2 border-b border-app-border">
-            <h3 className="font-bold text-app-textHeader text-sm tracking-wide flex items-center gap-1.5">
-              Definições
+            <h3 className="font-bold text-app-textHeader text-sm tracking-wide flex items-center justify-between">
+              <span>Definições</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-app-accent/20 text-app-accent rounded font-mono font-bold">v2.0.0</span>
             </h3>
             <span className="text-[11px] text-app-textMuted">A resenha Desktop</span>
           </div>
@@ -415,9 +613,20 @@ export const SettingsModal: React.FC = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-app-textMuted">
-                      Dispositivo de Saída (Auscultadores)
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold uppercase tracking-wider text-app-textMuted">
+                        Dispositivo de Saída (Auscultadores)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleTestOutputDevice}
+                        disabled={isPlayingOutputTest}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-app-accent hover:underline disabled:opacity-50 transition-colors"
+                      >
+                        <Volume2 size={13} className={isPlayingOutputTest ? 'animate-bounce text-green-400' : ''} />
+                        <span>{isPlayingOutputTest ? 'A reproduzir...' : 'Testar Áudio'}</span>
+                      </button>
+                    </div>
                     <select
                       value={stagedOutputDev}
                       onChange={(e) => setStagedOutputDev(e.target.value)}
@@ -432,31 +641,49 @@ export const SettingsModal: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Teste de Microfone & Medidor ao Vivo */}
+                {/* Teste de Microfone & Medidor ao Vivo com Corte de Sensibilidade */}
                 <div className="bg-app-card p-4 rounded-xl border border-app-border space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-semibold text-app-textHeader">Teste de Microfone</h4>
-                      <p className="text-xs text-app-textMuted">Fala para testares o teu microfone e ouvires o teu retorno.</p>
+                      <p className="text-xs text-app-textMuted">Fala para testares a tua captação e veres a barra de som a mexer em tempo real.</p>
                     </div>
                     <button
                       onClick={toggleMicTest}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition-colors ${
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition-all ${
                         isTestingMic ? 'bg-[#da373c] text-white' : 'bg-app-accent text-white hover:bg-app-accentHover'
                       }`}
                     >
-                      <Play size={12} className={isTestingMic ? 'hidden' : 'block'} />
-                      {isTestingMic ? 'Parar Teste' : 'Iniciar Teste'}
+                      {isTestingMic ? <Square size={12} fill="white" /> : <Play size={12} />}
+                      {isTestingMic ? 'Parar Retorno' : 'Ouvir Retorno'}
                     </button>
                   </div>
 
-                  {/* Barra de volume ao vivo */}
-                  <div className="space-y-1">
-                    <div className="w-full h-2.5 bg-black/40 rounded-full overflow-hidden border border-white/10">
+                  {/* Barra de volume ao vivo com indicador de corte de sensibilidade */}
+                  <div className="space-y-1.5">
+                    <div className="relative w-full h-3.5 bg-black/50 rounded-full overflow-hidden border border-white/10">
+                      {/* Live level fill */}
                       <div
-                        className="h-full bg-[#23a55a] transition-all duration-75 rounded-full"
-                        style={{ width: `${Math.min(100, (isTestingMic ? liveMicVolume : liveMicVolume) * 100 * 2.5)}%` }}
+                        className={`h-full transition-all duration-75 rounded-full ${
+                          micVolume >= stagedSensitivity ? 'bg-[#23a55a] shadow-[0_0_10px_#23a55a]' : 'bg-[#23a55a]/60'
+                        }`}
+                        style={{ width: `${Math.min(100, micVolume * 100 * 3.5)}%` }}
                       />
+
+                      {/* Sensitivity Cutoff Line Marker */}
+                      <div
+                        className="absolute top-0 bottom-0 w-1 bg-white shadow-[0_0_4px_white] z-10"
+                        style={{ left: `${Math.min(100, stagedSensitivity * 100 * 3.5)}%` }}
+                        title={`Sensibilidade: ${stagedSensitivity}`}
+                      />
+                    </div>
+
+                    <div className="flex justify-between items-center text-[10px] text-app-textMuted">
+                      <span>Silêncio</span>
+                      <span className={`font-semibold ${micVolume >= stagedSensitivity ? 'text-[#23a55a]' : 'text-app-textMuted'}`}>
+                        {micVolume >= stagedSensitivity ? '🟢 Voz Detetada (Ativa)' : '⚪ Voz Abaixo do Corte'}
+                      </span>
+                      <span>Máximo</span>
                     </div>
                   </div>
                 </div>
@@ -466,7 +693,7 @@ export const SettingsModal: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="text-sm font-semibold text-app-textHeader">Sensibilidade de Entrada</h4>
-                      <p className="text-xs text-app-textMuted">Ajusta o volume necessário para ativar a tua voz no canal.</p>
+                      <p className="text-xs text-app-textMuted">Ajusta a linha branca acima para definir o volume mínimo que ativa o microfone.</p>
                     </div>
                     <span className="text-xs font-mono font-bold text-app-accent">{stagedSensitivity}</span>
                   </div>
@@ -619,74 +846,120 @@ export const SettingsModal: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Cor do Perfil & Modo Arco-Íris */}
-                <div className="bg-app-card p-4 rounded-xl border border-app-border space-y-4">
+                {/* Foto de Perfil & Cor do Perfil */}
+                <div className="bg-app-card p-5 rounded-xl border border-app-border space-y-5">
                   <div>
-                    <h4 className="text-sm font-semibold text-app-textHeader">Cor do Perfil & Avatar</h4>
-                    <p className="text-xs text-app-textMuted">Define como o teu avatar e o teu nome aparecem para os teus amigos.</p>
+                    <h4 className="text-sm font-semibold text-app-textHeader">Foto de Perfil & Avatar</h4>
+                    <p className="text-xs text-app-textMuted">Carrega uma foto de perfil ou personaliza a cor da tua bolha.</p>
                   </div>
 
-                  {/* Preview do Avatar */}
-                  <div className="flex items-center gap-4 p-3 bg-white/5 rounded-xl">
-                    <div
-                      className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg text-white shadow-md ${
-                        stagedUserColor === 'rainbow' ? 'avatar-rainbow' : ''
-                      }`}
-                      style={stagedUserColor !== 'rainbow' ? { backgroundColor: stagedUserColor } : {}}
-                    >
-                      {currentUser?.username[0]?.toUpperCase() || 'U'}
+                  {/* Preview do Avatar com botão de upload */}
+                  <div className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/5">
+                    <div className="relative group shrink-0">
+                      <div
+                        className="w-16 h-16 rounded-full flex items-center justify-center font-bold text-2xl text-white shadow-lg overflow-hidden ring-2 ring-white/10"
+                        style={{ backgroundColor: stagedUserColor }}
+                      >
+                        {currentUser?.avatarUrl ? (
+                          <img
+                            src={currentUser.avatarUrl.startsWith('http') ? currentUser.avatarUrl : `${serverUrl}${currentUser.avatarUrl}`}
+                            alt={currentUser.username}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          currentUser?.username[0]?.toUpperCase() || 'U'
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <span className={`text-sm font-bold text-app-textHeader ${stagedUserColor === 'rainbow' ? 'text-rainbow' : ''}`}>
-                        {currentUser?.username || 'Utilizador'}
-                      </span>
-                      <p className="text-xs text-app-textMuted">
-                        {stagedUserColor === 'rainbow' ? '🌈 Modo Arco-Íris RGB Ativado' : `Cor: ${stagedUserColor}`}
-                      </p>
+
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <div>
+                        <span className="text-sm font-bold text-app-textHeader">
+                          {currentUser?.username || 'Utilizador'}
+                        </span>
+                        <p className="text-xs text-app-textMuted">
+                          {currentUser?.avatarUrl ? 'Foto de perfil ativa' : `Cor do avatar: ${stagedUserColor}`}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleAvatarUpload}
+                          accept="image/png,image/jpeg,image/gif,image/webp"
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={avatarUploading}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-app-accent hover:bg-app-accentHover disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow transition-all active:scale-95"
+                        >
+                          <Upload size={13} />
+                          <span>{avatarUploading ? 'A enviar...' : 'Carregar Foto de Perfil'}</span>
+                        </button>
+
+                        {currentUser?.avatarUrl && (
+                          <button
+                            type="button"
+                            onClick={handleRemoveAvatar}
+                            className="flex items-center gap-1 px-2.5 py-1.5 bg-red-500/15 hover:bg-red-500/25 text-red-400 rounded-lg text-xs font-semibold transition-colors"
+                            title="Remover foto de perfil"
+                          >
+                            <Trash2 size={13} />
+                            <span>Remover Foto</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {avatarSuccess && (
+                        <p className="text-xs text-[#23a55a] font-semibold flex items-center gap-1 animate-in fade-in">
+                          <Check size={14} /> Foto de perfil atualizada com sucesso!
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  {/* Paleta rápida + Botão Arco-Íris */}
-                  <div className="space-y-2">
+                  {/* Seletor de Cores de Perfil (Conforme print com espectro e RGB/HEX) */}
+                  <div className="space-y-3 pt-3 border-t border-app-border">
                     <label className="text-xs font-bold uppercase tracking-wider text-app-textMuted">
-                      Escolher Cor ou Efeito
+                      Cor do Perfil & Identificação
                     </label>
-                    <div className="flex flex-wrap items-center gap-2">
+
+                    <div className="flex flex-wrap items-center gap-3">
                       {[
-                        '#5865F2', '#23a55a', '#f23f43', '#f0b232', '#00ccff', '#9b59b6', '#e91e63', '#e67e22'
+                        '#5865F2', '#23a55a', '#f23f43', '#f0b232', '#00ccff', '#9b59b6', '#e91e63', '#e67e22', '#546e7a', '#2c3e50'
                       ].map((hex) => (
                         <button
                           key={hex}
                           onClick={() => setStagedUserColor(hex)}
                           className={`w-8 h-8 rounded-full transition-transform hover:scale-110 shadow ${
-                            stagedUserColor === hex ? 'ring-2 ring-white scale-110' : ''
+                            stagedUserColor.toLowerCase() === hex.toLowerCase() ? 'ring-2 ring-white scale-110' : ''
                           }`}
                           style={{ backgroundColor: hex }}
+                          title={hex}
                         />
                       ))}
 
-                      {/* Seletor HEX Livre */}
-                      <input
-                        type="color"
-                        value={stagedUserColor !== 'rainbow' ? stagedUserColor : '#5865F2'}
-                        onChange={(e) => setStagedUserColor(e.target.value)}
-                        className="w-8 h-8 rounded-full cursor-pointer bg-transparent border-0"
-                        title="Cor personalizada"
-                      />
-
-                      {/* Botão Especial Arco-Íris */}
-                      <button
-                        onClick={() => setStagedUserColor('rainbow')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow transition-all ${
-                          stagedUserColor === 'rainbow'
-                            ? 'ring-2 ring-white scale-105 avatar-rainbow'
-                            : 'bg-white/10 hover:bg-white/20'
-                        }`}
-                        title="Ativar Efeito Arco-Íris RGB"
+                      {/* Seletor Customizado com Espectro / Slider / RGB (Print 2) */}
+                      <label
+                        className="flex items-center gap-2.5 px-3 py-1.5 bg-app-input hover:bg-app-hover border border-app-border rounded-xl cursor-pointer transition-colors shadow-sm"
+                        title="Abrir Seletor com Espectro e RGB"
                       >
-                        <Sparkles size={14} className="text-yellow-300 animate-spin" />
-                        <span>🌈 Efeito Arco-Íris (RGB)</span>
-                      </button>
+                        <input
+                          type="color"
+                          value={stagedUserColor.startsWith('#') ? stagedUserColor : '#5865F2'}
+                          onChange={(e) => setStagedUserColor(e.target.value)}
+                          className="w-6 h-6 rounded-md cursor-pointer bg-transparent border-0 p-0"
+                        />
+                        <span className="text-xs font-mono font-bold text-app-textHeader uppercase">
+                          {stagedUserColor}
+                        </span>
+                        <span className="text-[10px] text-app-textMuted bg-white/5 px-1.5 py-0.5 rounded">
+                          RGB / HEX
+                        </span>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -826,16 +1099,22 @@ export const SettingsModal: React.FC = () => {
 
                 {currentUser && (
                   <div className="bg-app-card p-4 rounded-xl border border-app-border flex items-center gap-4">
-                    <div
-                      className={`w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl text-white shadow-md ${
-                        currentUser.color === 'rainbow' ? 'avatar-rainbow' : ''
-                      }`}
-                      style={currentUser.color !== 'rainbow' ? { backgroundColor: currentUser.color } : {}}
-                    >
-                      {currentUser.username[0]?.toUpperCase()}
-                    </div>
+                    {currentUser.avatarUrl ? (
+                      <img
+                        src={currentUser.avatarUrl}
+                        alt={currentUser.username}
+                        className="w-14 h-14 rounded-full object-cover shadow-md"
+                      />
+                    ) : (
+                      <div
+                        className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-xl text-white shadow-md"
+                        style={{ backgroundColor: currentUser.color || '#5865F2' }}
+                      >
+                        {currentUser.username[0]?.toUpperCase()}
+                      </div>
+                    )}
                     <div>
-                      <h4 className={`text-base font-bold text-app-textHeader ${currentUser.color === 'rainbow' ? 'text-rainbow' : ''}`}>
+                      <h4 className="text-base font-bold text-app-textHeader">
                         {currentUser.username}
                       </h4>
                       <p className="text-xs text-app-textMuted">ID: <code className="text-xs text-app-accent">{currentUser.id}</code></p>

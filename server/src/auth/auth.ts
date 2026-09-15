@@ -37,6 +37,7 @@ export function authenticateOrRegister(username: string, pin: string, isRegister
         id: existingUser.id,
         username: existingUser.username,
         color: existingUser.color,
+        avatarUrl: existingUser.avatar_url || undefined,
         isOnline: true,
         createdAt: existingUser.created_at
       }
@@ -59,6 +60,7 @@ export function authenticateOrRegister(username: string, pin: string, isRegister
       id,
       username: trimmedUsername,
       color,
+      avatarUrl: undefined,
       isOnline: true,
       createdAt: new Date().toISOString()
     }
@@ -66,11 +68,12 @@ export function authenticateOrRegister(username: string, pin: string, isRegister
 }
 
 export function getAllUsers(onlineUserIds: Set<string>): User[] {
-  const rows = db.prepare('SELECT id, username, color, created_at FROM users ORDER BY username ASC').all() as any[];
+  const rows = db.prepare('SELECT id, username, color, avatar_url, created_at FROM users ORDER BY username ASC').all() as any[];
   return rows.map(r => ({
     id: r.id,
     username: r.username,
     color: r.color,
+    avatarUrl: r.avatar_url || undefined,
     isOnline: onlineUserIds.has(r.id),
     createdAt: r.created_at
   }));
@@ -111,5 +114,15 @@ export function updateUserColor(userId: string, color: string): { success: boole
 
   db.prepare('UPDATE users SET color = ? WHERE id = ?').run(cleanColor, userId);
   return { success: true, message: 'Cor atualizada com sucesso!', color: cleanColor };
+}
+
+export function updateUserAvatar(userId: string, avatarUrl: string): { success: boolean; message: string; avatarUrl?: string } {
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(userId) as any;
+  if (!user) {
+    return { success: false, message: 'Utilizador não encontrado.' };
+  }
+
+  db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatarUrl, userId);
+  return { success: true, message: 'Foto de perfil atualizada com sucesso!', avatarUrl };
 }
 

@@ -90,19 +90,22 @@ interface AppState {
       id: string;
       username: string;
       color?: string;
+      avatarUrl?: string;
       isScreenSharing?: boolean;
     } | null;
   };
   openContextMenu: (
     x: number,
     y: number,
-    targetUser: { id: string; username: string; color?: string; isScreenSharing?: boolean }
+    targetUser: { id: string; username: string; color?: string; avatarUrl?: string; isScreenSharing?: boolean }
   ) => void;
   closeContextMenu: () => void;
 
   // Appearance & Themes
   theme: ThemeMode;
   setTheme: (theme: ThemeMode) => void;
+  updateUserColor: (userId: string, color: string) => void;
+  updateUserAvatar: (userId: string, avatarUrl: string) => void;
 
   // System Settings
   minimizeToTray: boolean;
@@ -212,6 +215,20 @@ export const useAppStore = create<AppState>((set) => ({
         members: state.members.map((m) => (m.id === userId ? { ...m, color } : m)),
         voiceParticipants: state.voiceParticipants.map((p) =>
           p.userId === userId ? { ...p, color } : p
+        )
+      };
+    }),
+  updateUserAvatar: (userId, avatarUrl) =>
+    set((state) => {
+      const nextUser = state.currentUser?.id === userId ? { ...state.currentUser, avatarUrl } : state.currentUser;
+      if (state.currentUser?.id === userId && nextUser) {
+        localStorage.setItem('discord_mini_user', JSON.stringify(nextUser));
+      }
+      return {
+        currentUser: nextUser,
+        members: state.members.map((m) => (m.id === userId ? { ...m, avatarUrl } : m)),
+        voiceParticipants: state.voiceParticipants.map((p) =>
+          p.userId === userId ? { ...p, avatarUrl } : p
         )
       };
     }),

@@ -53,7 +53,6 @@ export const UserContextMenu: React.FC = () => {
   const isMutedLocally = !!localMutedUsers[target.id];
   const isStreaming = !!remoteScreenStreams[target.id] || target.isScreenSharing;
   const currentStreamVol = screenShareVolumes[target.id] ?? 100;
-  const isRainbow = target.color === 'rainbow';
 
   // Clamp menu position to stay inside viewport
   const menuWidth = 240;
@@ -75,16 +74,22 @@ export const UserContextMenu: React.FC = () => {
     >
       {/* Target User Info Header */}
       <div className="flex items-center gap-2.5 px-2 py-1.5 bg-white/5 rounded-lg">
-        <div
-          className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white shadow text-sm shrink-0 ${
-            isRainbow ? 'avatar-rainbow' : ''
-          }`}
-          style={!isRainbow ? { backgroundColor: target.color || '#5865F2' } : {}}
-        >
-          {target.username[0]?.toUpperCase()}
-        </div>
+        {target.avatarUrl ? (
+          <img
+            src={target.avatarUrl}
+            alt={target.username}
+            className="w-8 h-8 rounded-full object-cover shadow shrink-0"
+          />
+        ) : (
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white shadow text-sm shrink-0"
+            style={{ backgroundColor: target.color || '#5865F2' }}
+          >
+            {target.username[0]?.toUpperCase()}
+          </div>
+        )}
         <div className="flex flex-col min-w-0">
-          <span className={`font-bold truncate text-white ${isRainbow ? 'text-rainbow' : ''}`}>
+          <span className="font-bold truncate text-white">
             {target.username}
           </span>
           <span className="text-[10px] text-[#949ba4]">Utilizador</span>

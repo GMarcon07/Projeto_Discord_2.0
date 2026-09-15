@@ -2,11 +2,14 @@ import express from 'express';
 import http from 'http';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
+import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import { Server as SocketIOServer } from 'socket.io';
 import { initDatabase, db } from './db/database';
 import { startCleanupScheduler } from './db/cleanup';
-import { authenticateOrRegister, changePin, updateUserColor } from './auth/auth';
+import { authenticateOrRegister, changePin, updateUserColor, updateUserAvatar } from './auth/auth';
 import { setupSocketHandlers } from './socket/socketHandler';
 import { ClientToServerEvents, ServerToClientEvents, Server as ServerType, Channel } from '@discord-mini/shared';
 
@@ -21,7 +24,44 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Ensure uploads directories exist
+const uploadsDir = path.join(process.cwd(), 'uploads');
+const filesDir = path.join(uploadsDir, 'files');
+const avatarsDir = path.join(uploadsDir, 'avatars');
+if (!fs.existsSync(filesDir)) fs.mkdirSync(filesDir, { recursive: true });
+if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+
+// Serve static uploads
+app.use('/uploads', express.static(uploadsDir));
+
+// Multer storage for chat files (Photos & Videos up to 100MB)
+const fileStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, filesDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${Date.now()}-${uuidv4()}${ext}`);
+  }
+});
+const uploadFile = multer({
+  storage: fileStorage,
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB
+});
+
+// Multer storage for user avatars (Images up to 15MB)
+const avatarStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, avatarsDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `avatar-${Date.now()}-${uuidv4()}${ext}`);
+  }
+});
+const uploadAvatar = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 15 * 1024 * 1024 }
+});
 
 // Initialize SQLite tables & seed
 initDatabase();
@@ -247,12 +287,56 @@ app.put('/api/users/:userId/color', (req, res) => {
   res.json(result);
 });
 
+// Update User Avatar
+app.post('/api/users/:userId/avatar', uploadAvatar.single('avatar'), (req, res) => {
+  const { userId } = req.params;
+  if (!req.file) {
+    return res.status(400).json({ error: 'Nenhum ficheiro de imagem enviado.' });
+  }
+
+  const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+  const result = updateUserAvatar(userId, avatarUrl);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+
+  io.emit('user:avatar_updated', { userId, avatarUrl });
+  res.json({ success: true, avatarUrl });
+});
+
+// Upload File (Photos / Videos up to 100MB)
+app.post('/api/upload', uploadFile.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Nenhum ficheiro enviado.' });
+  }
+
+  const fileUrl = `/uploads/files/${req.file.filename}`;
+  res.json({
+    success: true,
+    fileUrl,
+    fileName: req.file.originalname,
+    fileType: req.file.mimetype,
+    fileSize: req.file.size
+  });
+});
+
 // Get Channel Messages (last 100)
 app.get('/api/channels/:channelId/messages', (req, res) => {
   const { channelId } = req.params;
   try {
     const rows = db.prepare(`
-      SELECT id, channel_id as channelId, user_id as userId, username, user_color as userColor, content, created_at as createdAt
+      SELECT 
+        id, 
+        channel_id as channelId, 
+        user_id as userId, 
+        username, 
+        user_color as userColor, 
+        content,
+        file_url as fileUrl,
+        file_name as fileName,
+        file_type as fileType,
+        file_size as fileSize,
+        created_at as createdAt
       FROM messages
       WHERE channel_id = ?
       ORDER BY created_at ASC

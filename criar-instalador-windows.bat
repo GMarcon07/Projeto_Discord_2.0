@@ -18,7 +18,7 @@ echo ========================================================
 echo   Instaladores gerados com SUCESSO em:
 echo   %~dp0electron-app\dist-release\
 echo.
-echo   - A resenha Setup 1.0.0.exe (Instalador NSIS com atalho)
-echo   - A resenha 1.0.0.exe (Versao Portatil sem instalacao)
+echo   - A resenha Setup 2.0.0.exe (Instalador NSIS com atalho)
+echo   - A resenha 2.0.0.exe (Versao Portatil sem instalacao)
 echo ========================================================
 pause

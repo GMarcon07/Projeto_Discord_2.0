@@ -54,6 +54,13 @@ export function initDatabase() {
     // Column already exists
   }
 
+  // Migration: avatar_url in users
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN avatar_url TEXT');
+  } catch {
+    // Column already exists
+  }
+
   // 4. Messages table (7-day retention)
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -63,11 +70,29 @@ export function initDatabase() {
       username TEXT NOT NULL,
       user_color TEXT NOT NULL,
       content TEXT NOT NULL,
+      file_url TEXT,
+      file_name TEXT,
+      file_type TEXT,
+      file_size INTEGER,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
   `);
+
+  // Migration: ensure file columns exist on existing messages table
+  try {
+    db.exec('ALTER TABLE messages ADD COLUMN file_url TEXT');
+  } catch {}
+  try {
+    db.exec('ALTER TABLE messages ADD COLUMN file_name TEXT');
+  } catch {}
+  try {
+    db.exec('ALTER TABLE messages ADD COLUMN file_type TEXT');
+  } catch {}
+  try {
+    db.exec('ALTER TABLE messages ADD COLUMN file_size INTEGER');
+  } catch {}
 
   // Indexes for performance
   db.exec(`

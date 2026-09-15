@@ -35,6 +35,7 @@ export const App: React.FC = () => {
     removeChannelFromServer,
     setServerChannels,
     updateUserColor,
+    updateUserAvatar,
     localMutedUsers,
     addMessage,
     setChannelMessages,
@@ -202,6 +203,10 @@ export const App: React.FC = () => {
 
     socket.on('user:color_updated', ({ userId, color }) => {
       updateUserColor(userId, color);
+    });
+
+    socket.on('user:avatar_updated', ({ userId, avatarUrl }) => {
+      updateUserAvatar(userId, avatarUrl);
     });
 
     return () => {
@@ -391,11 +396,18 @@ export const App: React.FC = () => {
   };
 
   // 9. Chat Handlers
-  const handleSendMessage = (content: string) => {
+  const handleSendMessage = (
+    content: string,
+    attachment?: { fileUrl: string; fileName: string; fileType: string; fileSize: number }
+  ) => {
     if (!currentChannelId || !socketRef.current) return;
     socketRef.current.emit('chat:send_message', {
       channelId: currentChannelId,
-      content
+      content,
+      fileUrl: attachment?.fileUrl,
+      fileName: attachment?.fileName,
+      fileType: attachment?.fileType,
+      fileSize: attachment?.fileSize
     });
   };
 

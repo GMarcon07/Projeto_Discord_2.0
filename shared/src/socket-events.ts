@@ -10,7 +10,14 @@ export interface SignalData {
 
 export interface ClientToServerEvents {
   'user:auth': (data: { userId: string; username: string }) => void;
-  'chat:send_message': (data: { channelId: string; content: string }) => void;
+  'chat:send_message': (data: {
+    channelId: string;
+    content: string;
+    fileUrl?: string;
+    fileName?: string;
+    fileType?: string;
+    fileSize?: number;
+  }) => void;
   'voice:join': (data: { channelId: string }) => void;
   'voice:leave': () => void;
   'voice:state_change': (data: {
@@ -39,4 +46,5 @@ export interface ServerToClientEvents {
   'channel:reordered': (data: { serverId: string; channels: Channel[] }) => void;
   'server:created': (data: { server: Server }) => void;
   'user:color_updated': (data: { userId: string; color: string }) => void;
+  'user:avatar_updated': (data: { userId: string; avatarUrl: string }) => void;
 }
